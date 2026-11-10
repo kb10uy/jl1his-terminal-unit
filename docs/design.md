@@ -14,7 +14,8 @@ USB device with:
 - USB Audio input (microphone direction): captures the rig's receive AF and
   sends it to the PC. Demodulation runs on the PC for now (MMTTY and the
   like).
-- Serial ports: key FSK and control PTT from data sent by the PC.
+- A serial port: takes text commands from the PC that key FSK, control PTT
+  and change settings.
 
 On-board demodulation on the RP2350 is a later goal.
 
@@ -39,12 +40,20 @@ On-board demodulation on the RP2350 is a later goal.
 ### Firmware
 
 - Language and framework: Rust + embassy (`embassy-rp`, `embassy-usb`)
-- USB configuration: UAC (microphone, mono 48 kHz / 16 bit) + two CDC ACM
-  - CDC #1 (FSK port): MMTTY opens it as a COM port for FSK. Received bytes
-    are keyed as Baudot. RTS / DTR drive PTT.
-  - CDC #2 (control port): line-based text commands. Changes settings and
-    reports status independently of what is being sent. Later it also
-    carries decoded text.
+- USB configuration: UAC (microphone, mono 48 kHz / 16 bit) + one CDC ACM
+  port, the control port.
+  - The control port takes line-based text commands. The text to transmit
+    and PTT are commands like any other, in the same stream as the commands
+    that change settings and query status, so their order is defined. Later
+    the port also carries decoded text.
+  - There is no port that takes raw Baudot at 45 baud / 5 bit with PTT on
+    RTS / DTR. Its only use was to let MMTTY open the unit as a UART with
+    nothing added on the PC, and it depended on Windows passing that line
+    coding through unchanged, which was never checked.
+  - MMTTY can still transmit through the unit with an `.fsk` add-on on the
+    PC that translates to the command protocol, as JA7UDE's `tinyfsk.fsk`
+    does for TinyFSK (https://www.qsl.net/ja7ude/tinyfsk/index.html). No
+    such add-on is planned yet.
 
 ### License
 
@@ -77,11 +86,19 @@ connected with `embassy-sync` Channel / Signal.
 ### FSK Transmit
 
 - A PIO state machine generates 5 data bits + 1.5 stop bits.
-- The baud rate follows the line coding of CDC #1. Line coding carries the
-  baud rate as an integer only, so 45 is read as 45.45 baud.
-- USB delivers bytes in bursts that queue in a firmware buffer. When the PC
-  drops RTS / DTR, PTT stays on until the buffer is empty and the last
-  character has been sent in full.
+- The baud rate is set by a control command, so 45.45 baud is given exactly.
+  The firmware ignores the line coding of the control port.
+- A transmit command carries text. The firmware converts it to Baudot and
+  inserts the LTRS / FIGS shifts. The conversion lives in `core` and is
+  tested on the host.
+- The FSK transmit task takes Baudot codes and PTT requests from a queue and
+  does not know what filled it. The command parser is the only source now; a
+  raw port could be added later as a second one without changing the task.
+- PTT is keyed and released by commands. A release takes effect only after
+  the queue is empty and the last character has been sent in full.
+- The control port never stops reading because the transmit queue is full.
+  A transmit command that does not fit is answered with an error, so that an
+  abort never waits behind queued text.
 - The FSK polarity (which of mark / space maps to open / closed) can be
   inverted by a control command.
 - The scaffold halts on panic with `panic-halt`. Once the FSK / PTT outputs
@@ -89,10 +106,18 @@ connected with `embassy-sync` Channel / Signal.
 
 ### Control Commands (candidates; the command set is not designed yet)
 
+- Transmit text
+- PTT on / off
+- Abort the transmission and discard the queue
+- Baud rate
 - Invert FSK polarity
 - PTT delay
 - Status query
 - Digital gain
+
+Toward the PC the port carries command replies, logs, an echo of the
+characters as they are sent and, later, decoded text. Each line is tagged
+with its kind. The format is part of the command set.
 
 ### Audio
 
@@ -130,7 +155,8 @@ writes the UAC 1.0 descriptors itself.
 
 ### Stages
 
-1. Two CDC ports + PIO-based FSK / PTT (enough to transmit from MMTTY)
+1. The control port + PIO-based FSK / PTT (enough to transmit by typing
+   commands into a serial terminal)
 2. Add the UAC microphone
 3. On-board demodulation
 
@@ -227,14 +253,13 @@ version and source location, datasheet section, manual page) under it.
   input.
 - [ ] 4. Whether the `embassy-rp` ADC can capture continuously without gaps
   through DMA.
-- [ ] 5. How to get the line coding (baud rate, data bits, stop bits) and
-  DTR / RTS changes from `CdcAcmClass` in `embassy-usb`.
-- [ ] 6. Whether Windows usbser passes 5 bit / 1.5 stop / 45 baud settings to
-  the device unchanged (check on hardware with MMTTY).
-- [ ] 7. The Tiny 2350 schematic: exposed GPIOs, and filtering of the ADC's
+- [ ] 5. How `CdcAcmClass` in `embassy-usb` reports DTR changes and
+  SEND_BREAK, to tell when the PC has closed the port and to offer an abort
+  that does not travel through the bulk pipe.
+- [ ] 6. The Tiny 2350 schematic: exposed GPIOs, and filtering of the ADC's
   analog supply and reference.
-- [ ] 8. The effective resolution of the ADC in the RP2350 datasheet.
-- [ ] 9. The manuals of the FTDX10 and each Icom model: AF output level and
+- [ ] 7. The effective resolution of the ADC in the RP2350 datasheet.
+- [ ] 8. The manuals of the FTDX10 and each Icom model: AF output level and
   impedance, FSK / PTT input specification and polarity, pinout.
 
 ## 8. Undecided
@@ -243,6 +268,10 @@ version and source location, datasheet section, manual page) under it.
   3–4 pins free for I2S in addition to FSK, PTT and the ADC input.
 - Whether to isolate with a transformer.
 - How to switch the gain (jumper or trimmer).
-- The control command set.
+- The control command set, including whether it follows the TinyFSK protocol
+  so that the existing `tinyfsk.fsk` can drive the unit from MMTTY. The
+  TinyFSK protocol has not been checked against its documentation.
+- What happens to a transmission in progress when the PC closes the control
+  port, and whether a DTR drop or SEND_BREAK aborts it.
 - The license of the hardware design files. pid.codes requires one once
   they are in the repository (see "USB VID / PID").

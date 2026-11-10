@@ -5,13 +5,13 @@
 jl1his-terminal-unit is an RTTY terminal unit built on the RP2350 (Pimoroni
 Tiny 2350), with firmware written in Rust with embassy. The PC sees it as a
 composite USB device: a USB Audio microphone that carries the rig's receive
-AF, and two CDC ACM ports, one keying FSK and PTT for MMTTY and similar
-programs, the other taking control commands.
+AF, and a CDC ACM port that takes text commands to key FSK and PTT and to
+change settings.
 
 The design is recorded in `docs/design.md`. Read it before starting work.
 
 The firmware blinks the on-board LED and presents a UAC microphone that
-streams a 1 kHz test tone. Next come stage 1, the two CDC ports and PIO-based
+streams a 1 kHz test tone. Next come stage 1, the control port and PIO-based
 FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
 
 ## Architecture
@@ -29,8 +29,9 @@ FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
 - Nothing may leave PTT or FSK keyed after power-up, during reset, on panic or
   after a watchdog reset. The hardware also turns the optocouplers off while
   their drive pins are undefined.
-- PTT is released only after the buffer has been sent in full, even when the
-  PC has already dropped RTS / DTR.
+- A command that ends a transmission releases PTT only after the queued text
+  has been sent in full. What an abort or a closed port does is listed under
+  "Undecided" in `docs/design.md`.
 - The chip is stepping A2 and affected by erratum RP2350-E9. Do not rely on
   internal pull-downs: inputs use pull-ups and are pulled to GND, and a pin
   that must stay Low uses an external resistor of 8.2 kΩ or less. Disable the
