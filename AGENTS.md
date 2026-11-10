@@ -10,7 +10,8 @@ programs, the other taking control commands.
 
 The design is recorded in `docs/design.md`. Read it before starting work.
 
-Only the workspace scaffold exists: the firmware boots and logs over defmt.
+Only the workspace scaffold exists: the firmware boots and blinks the on-board
+LED.
 Implementation begins with stage 1, the two CDC ports and PIO-based FSK / PTT.
 The UAC microphone and on-board demodulation follow once stage 1 works on
 hardware.
@@ -87,8 +88,13 @@ hardware.
 ## Build and Test
 
 `rust-toolchain.toml` selects the stable toolchain and installs the
-`thumbv8m.main-none-eabihf` target. Flashing and logging need `probe-rs` and a
-debug probe on the SWD pins.
+`thumbv8m.main-none-eabihf` target.
+
+The Tiny 2350 does not expose SWD, so there is no debug probe and no RTT log.
+The firmware is flashed over USB with `picotool`, whose prebuilt binaries are
+published in the `raspberrypi/pico-sdk-tools` releases. Put the board into
+BOOTSEL mode before flashing. The on-board green LED blinking once a second
+shows that the firmware is running.
 
 The target and the runner are set in `firmware/.cargo/config.toml`, which
 Cargo reads only when it is run inside `firmware/`. The firmware does not
@@ -103,8 +109,8 @@ In the workspace root:
 In `firmware/`:
 
 - `cargo build` builds the firmware. Add `--release` for an optimized build.
-- `cargo run` flashes it with `probe-rs run --chip RP235x` and prints the
-  defmt log over RTT.
+- `cargo run` flashes a board in BOOTSEL mode with
+  `picotool load -u -v -x -t elf` and starts the firmware.
 - `cargo clippy -- -D warnings` checks the firmware.
 
 Run all three checks in the root and the build and Clippy in `firmware/`

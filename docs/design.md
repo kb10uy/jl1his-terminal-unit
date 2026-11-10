@@ -23,6 +23,14 @@ On-board demodulation on the RP2350 is a later goal.
 
 - Board: Pimoroni Tiny 2350
 - Chip marking: RP2350A0A2 (stepping A2, affected by erratum RP2350-E9)
+- Debug: the board does not expose SWD (checked on the board). Firmware is
+  flashed over USB in BOOTSEL mode with `picotool`, and there is no RTT log.
+  Logs and status go out through the control port once it exists.
+- On-board parts: an RGB LED on GPIO 18 (R), 19 (G) and 20 (B), and a user
+  switch on GPIO 23 (pico-sdk `src/boards/include/boards/pimoroni_tiny2350.h`).
+  The LED is active low: Pimoroni's `RGBLED` driver defaults to
+  `Polarity::ACTIVE_LOW` (pimoroni-pico `drivers/rgbled/rgbled.hpp`) and their
+  Tiny 2350 example uses that default.
 - Audio input: the internal ADC, driven by an op-amp front end.
 - Target rigs: the Yaesu FTDX10 first. The design also works with the ACC
   jack of Icom rigs.
@@ -54,6 +62,8 @@ connected with `embassy-sync` Channel / Signal.
   character has been sent in full.
 - The FSK polarity (which of mark / space maps to open / closed) can be
   inverted by a control command.
+- The scaffold halts on panic with `panic-halt`. Once the FSK / PTT outputs
+  exist, replace it with a handler that releases both before anything else.
 
 ### Control Commands (candidates; the command set is not designed yet)
 
