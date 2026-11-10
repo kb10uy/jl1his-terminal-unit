@@ -1,9 +1,9 @@
 # RTTY Terminal Unit Design
 
-Decisions from the design discussion. Implementation has not started.
-Items marked "unverified" come from memory and have not been checked against
-source code, datasheets or manuals. Once an item is verified, remove the mark
-and cite the source.
+Decisions from the design discussion. Only the workspace scaffold exists;
+none of the stages below is implemented. Items marked "unverified" come from
+memory and have not been checked against source code, datasheets or manuals.
+Once an item is verified, remove the mark and cite the source.
 
 ## 1. Purpose
 

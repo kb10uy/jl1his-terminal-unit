@@ -10,12 +10,17 @@ programs, the other taking control commands.
 
 The design is recorded in `docs/design.md`. Read it before starting work.
 
-Implementation has not started. It begins with stage 1, the two CDC ports and
-PIO-based FSK / PTT. The UAC microphone and on-board demodulation follow once
-stage 1 works on hardware.
+Only the workspace scaffold exists: the firmware boots and logs over defmt.
+Implementation begins with stage 1, the two CDC ports and PIO-based FSK / PTT.
+The UAC microphone and on-board demodulation follow once stage 1 works on
+hardware.
 
 ## Architecture
 
+- The repository is a Cargo workspace of two crates. `core/`
+  (`terminal-unit-core`) is a `no_std` library free of platform dependencies,
+  for logic that is tested on the host. `firmware/` (`terminal-unit-firmware`)
+  is the RP2350 binary and depends on it.
 - The firmware targets the Cortex-M33 cores of the RP2350
   (`thumbv8m.main-none-eabihf`) and uses `embassy-rp`, `embassy-usb` and
   `embassy-sync`.
@@ -81,6 +86,26 @@ stage 1 works on hardware.
 
 ## Build and Test
 
-Not set up yet. When the firmware crate is created, list here the commands to
-build, flash and debug it, and the checks to run before completing a code
-change, including at least `cargo fmt --check` and Clippy.
+`rust-toolchain.toml` selects the stable toolchain and installs the
+`thumbv8m.main-none-eabihf` target. Flashing and logging need `probe-rs` and a
+debug probe on the SWD pins.
+
+The target and the runner are set in `firmware/.cargo/config.toml`, which
+Cargo reads only when it is run inside `firmware/`. The firmware does not
+build for the host, so the workspace root defaults to `core` alone.
+
+In the workspace root:
+
+- `cargo test` runs the host tests of `core`.
+- `cargo clippy --all-targets -- -D warnings` checks `core`.
+- `cargo fmt --all --check` checks the formatting of both crates.
+
+In `firmware/`:
+
+- `cargo build` builds the firmware. Add `--release` for an optimized build.
+- `cargo run` flashes it with `probe-rs run --chip RP235x` and prints the
+  defmt log over RTT.
+- `cargo clippy -- -D warnings` checks the firmware.
+
+Run all three checks in the root and the build and Clippy in `firmware/`
+before completing a code change.
