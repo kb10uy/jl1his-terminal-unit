@@ -1,7 +1,8 @@
 # RTTY Terminal Unit Design
 
-Decisions from the design discussion. Only the workspace scaffold exists;
-none of the stages below is implemented. Items marked "unverified" come from
+Decisions from the design discussion. The firmware presents the UAC
+microphone and streams a test tone through it; no other part of the stages
+below is implemented. Items marked "unverified" come from
 memory and have not been checked against source code, datasheets or manuals.
 Once an item is verified, remove the mark and cite the source.
 
@@ -45,6 +46,27 @@ On-board demodulation on the RP2350 is a later goal.
     reports status independently of what is being sent. Later it also
     carries decoded text.
 
+### License
+
+The firmware and the rest of the software are licensed under
+`MIT OR Apache-2.0` (`LICENSE-MIT`, `LICENSE-APACHE`). The license of the
+hardware design files is undecided.
+
+### USB VID / PID
+
+- VID 0x1209 with a PID allocated by pid.codes. The PID has not been
+  requested yet.
+- Until it is allocated, the firmware uses the pid.codes test PIDs
+  1209:0001–0010 (https://pid.codes/1209/), starting at 0001. Move to the
+  next one whenever the descriptor configuration changes, because Windows
+  caches the old configuration.
+- To request a PID (https://pid.codes/howto/), the repository has to be
+  public and carry a LICENSE file with a recognised open source license. If
+  it holds both hardware and software, both need one. The request is a pull
+  request to the pid.codes repository adding `org/<organisation>/index.md`
+  and `1209/<PID>/index.md` for an unused PID outside the reserved 0xxx and
+  1xxx ranges.
+
 ## 3. Firmware Design
 
 ### Tasks (draft)
@@ -85,11 +107,35 @@ connected with `embassy-sync` Channel / Signal.
 - Samples pass through an interface boundary inside the firmware, so that an
   external I2S ADC (such as the PCM1808) can replace the internal ADC later.
 
+### UAC Microphone
+
+`embassy-usb` has no UAC microphone class, so `firmware/src/microphone.rs`
+writes the UAC 1.0 descriptors itself.
+
+- Audio control interface: Input Terminal (Microphone, 0x0201) → Output
+  Terminal (USB Streaming, 0x0101). There is no Feature Unit, so the host
+  offers no volume or mute control and the level stays as the analog front
+  end sets it. No class-specific requests are handled.
+- Audio streaming interface: alternate setting 0 has no endpoint, alternate
+  setting 1 carries Format Type I PCM, mono, 16 bit, one discrete rate of
+  48 kHz.
+- Isochronous IN endpoint, asynchronous, `bInterval` 1. `wMaxPacketSize` is
+  98 bytes (49 samples), so that the device clock can send an extra sample
+  in some frames once the ADC paces the stream. The endpoint descriptor has
+  no sampling frequency control.
+- Until the ADC path exists, the stream carries a 1 kHz sine at −6 dBFS from
+  `terminal_unit_core::tone::Sine`, 48 samples per packet. Each write waits
+  until the host has taken the previous packet, so the host's frame clock
+  paces it.
+
 ### Stages
 
 1. Two CDC ports + PIO-based FSK / PTT (enough to transmit from MMTTY)
 2. Add the UAC microphone
 3. On-board demodulation
+
+The UAC microphone was brought up ahead of stage 1 with a test tone in place
+of the ADC.
 
 ## 4. Analog Circuits
 
@@ -161,10 +207,22 @@ connected with `embassy-sync` Channel / Signal.
 When an item is checked, tick it and write the result and its source (crate
 version and source location, datasheet section, manual page) under it.
 
-- [ ] 1. Whether `embassy-usb` has a UAC class for the microphone direction
+- [x] 1. Whether `embassy-usb` has a UAC class for the microphone direction
   (device → PC). As recalled, only the speaker direction exists. If not,
   write the descriptors and the isochronous IN endpoint ourselves.
-- [ ] 2. Whether the `embassy-rp` USB driver supports isochronous transfers.
+  - No. `embassy-usb` 0.6.0 `src/class/uac1/mod.rs` declares only
+    `pub mod speaker`, and its `class_codes` and `terminal_type` modules are
+    private. The descriptors are written in `firmware/src/microphone.rs` with
+    the public `InterfaceAltBuilder::descriptor` and
+    `endpoint_isochronous_in` (`src/builder.rs`).
+- [x] 2. Whether the `embassy-rp` USB driver supports isochronous transfers.
+  - Yes. `embassy-rp` 0.10.0 `src/usb.rs` `alloc_endpoint` accepts
+    `EndpointType::Isochronous` with a packet size up to 1023 bytes and sets
+    the endpoint type to `ISOCHRONOUS`. Endpoints are single-buffered, and
+    `EndpointIn::write` waits until the previous packet has been taken.
+  - `write` flips the data PID on every packet, also for isochronous
+    endpoints, where full-speed USB uses DATA0 only. Check on hardware that
+    the host accepts the stream.
 - [ ] 3. Whether the `embassy-rp` ADC pin initialization disables the digital
   input.
 - [ ] 4. Whether the `embassy-rp` ADC can capture continuously without gaps
@@ -186,6 +244,5 @@ version and source location, datasheet section, manual page) under it.
 - Whether to isolate with a transformer.
 - How to switch the gain (jumper or trimmer).
 - The control command set.
-- The USB VID / PID. During development, change the PID whenever the
-  descriptor configuration changes, because Windows caches the old
-  configuration.
+- The license of the hardware design files. pid.codes requires one once
+  they are in the repository (see "USB VID / PID").

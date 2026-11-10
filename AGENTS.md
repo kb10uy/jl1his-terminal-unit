@@ -10,11 +10,9 @@ programs, the other taking control commands.
 
 The design is recorded in `docs/design.md`. Read it before starting work.
 
-Only the workspace scaffold exists: the firmware boots and blinks the on-board
-LED.
-Implementation begins with stage 1, the two CDC ports and PIO-based FSK / PTT.
-The UAC microphone and on-board demodulation follow once stage 1 works on
-hardware.
+The firmware blinks the on-board LED and presents a UAC microphone that
+streams a 1 kHz test tone. Next come stage 1, the two CDC ports and PIO-based
+FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
 
 ## Architecture
 
@@ -38,7 +36,8 @@ hardware.
   that must stay Low uses an external resistor of 8.2 kΩ or less. Disable the
   digital input on pins used by the ADC.
 - Change the USB PID whenever the descriptor configuration changes. Windows
-  caches the old configuration.
+  caches the old configuration. Until pid.codes allocates a PID, move to the
+  next of the test PIDs 1209:0001–0010.
 
 ## Code Style
 
@@ -76,8 +75,8 @@ hardware.
 - When an item under "To Check Before Implementing" in `docs/design.md` is
   checked, tick it and write the result and its source under it.
 - Do not settle items under "Undecided" in `docs/design.md` on your own, such
-  as the pin assignment, the VID / PID or the control command set. Propose an
-  option with its reasons and ask the user.
+  as the pin assignment, the hardware license or the control command set.
+  Propose an option with its reasons and ask the user.
 
 ## Commits, Issues and PRs
 

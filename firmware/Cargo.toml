@@ -2,11 +2,13 @@
 name = "terminal-unit-firmware"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]
 terminal-unit-core = { path = "../core" }
 
+embassy-futures = "0.1.2"
 embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
 embassy-rp = { version = "0.10.0", features = ["time-driver", "critical-section-impl", "rp235xa", "binary-info"] }
 embassy-sync = "0.8.0"

@@ -2,4 +2,11 @@
 name = "terminal-unit-core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish.workspace = true
+
+[dependencies]
+libm = "0.2.16"
+
+[dev-dependencies]
+rstest = "0.28.0"
