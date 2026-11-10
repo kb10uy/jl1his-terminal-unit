@@ -33,7 +33,8 @@ On-board demodulation on the RP2350 is a later goal.
   The LED is active low: Pimoroni's `RGBLED` driver defaults to
   `Polarity::ACTIVE_LOW` (pimoroni-pico `drivers/rgbled/rgbled.hpp`) and their
   Tiny 2350 example uses that default.
-- Audio input: the internal ADC, driven by an op-amp front end.
+- Audio input: the internal ADC, driven by an op-amp front end built on the
+  MCP6022, behind an isolation transformer.
 - Target rigs: the Yaesu FTDX10 first. The design also works with the ACC
   jack of Icom rigs.
 
@@ -167,12 +168,19 @@ of the ADC.
 
 ### Receive AF Input Stage
 
-1. AC coupling
-2. Attenuator / gain adjustment
-3. Non-inverting amplifier (3.3 V single supply, rail-to-rail, 1.65 V bias)
-4. RC anti-aliasing LPF (a few kHz to 10 kHz)
-5. Series resistor + small capacitor → ADC pin
+1. Isolation transformer (10 kΩ : 10 kΩ)
+2. AC coupling
+3. Attenuator / gain adjustment
+4. Non-inverting amplifier (3.3 V single supply, rail-to-rail, 1.65 V bias)
+5. RC anti-aliasing LPF (a few kHz to 10 kHz)
+6. Series resistor + small capacitor → ADC pin
 
+- The op-amp is the MCP6022, a dual with rail-to-rail input and output. It
+  runs from 2.5 V to 5.5 V, has a gain bandwidth product of 10 MHz and an
+  input noise density of 8.7 nV/√Hz at 10 kHz, swings to within 15 mV of
+  ground and 20 mV of the supply into 10 kΩ, draws 1 mA per amplifier and has
+  an input bias current of 1 pA. It comes in 8-lead PDIP, SOIC and TSSOP
+  (Microchip DS20001685E, front page and section 1.0).
 - Input impedance around 100 kΩ, so the difference in rig output impedance
   (4.7 k to 10 kΩ) can be ignored.
 - A fixed gain of 3 covers both the FTDX10 and Icom rigs. With the FTDX10
@@ -180,9 +188,19 @@ of the ADC.
   the ADC's effective resolution.
 - Overvoltage protection: series resistor + clamp to the supply rails
   (BAT54S or similar).
-- If a transformer provides isolation, choose a 10 kΩ type. Driving a 600 Ω
-  type from a 10 kΩ output loses the low end. Whether to use a transformer is
-  undecided.
+- A transformer isolates the AF input from the rig. With the optocouplers on
+  FSK and PTT, no conductor then joins the rig's ground to the USB ground, so
+  no ground loop forms and RF common-mode current on transmit has no path
+  through the USB cable. It is a 10 kΩ type: driving a 600 Ω type from a
+  10 kΩ output loses the low end.
+- The transformer is the Sansui ST-78 made by Hashimoto Denki: 10 kΩ to
+  10 kΩ with a centre-tapped secondary, DC resistance 330 Ω and 420 Ω ±20 %,
+  insulation resistance 100 MΩ or more at 100 V DC, case CB-19, 13 g. The
+  catalogue lists the case with leads and with PCB pins and gives the
+  frequency response as a graph from 0.2 kHz to 10 kHz (Hashimoto Denki,
+  "トランジスタ用小型トランス" ST series catalogue,
+  `akizukidenshi.com/goodsaffix/st.pdf`). Which of the two cases to use is not
+  chosen yet.
 
 ### Rig-Side Assumptions (all unverified)
 
@@ -196,15 +214,41 @@ of the ADC.
 - Isolated by optocoupler open-collector outputs. Both rigs are assumed to
   take an input pulled up on the rig side that activates when pulled to GND
   (unverified).
+- Each output is a Toshiba TLP785 of rank GB, a phototransistor coupler in
+  DIP4. Rank GB has a current transfer ratio of 100 % to 600 % at
+  IF = 5 mA and VCE = 5 V. The saturation voltage is at most 0.4 V at
+  IC = 2.4 mA and IF = 8 mA, the collector-emitter rating is 80 V, the LED
+  forward voltage is 1.0 V to 1.3 V at 10 mA and the isolation voltage is
+  5000 Vrms. Saturated with a 1.9 kΩ load, it turns on in 1.5 µs and off in
+  50 µs, typically (Toshiba TLP785 datasheet, 2012-02-20). A coupler with a
+  logic output would be faster but needs a supply on the rig side, which the
+  rig's jack does not provide.
 - So that nothing transmits right after power-up or while pins are
   undefined, the optocoupler drive circuit is off whenever its pin is
   undefined.
 
 ### Connector
 
-- One general-purpose connector on the unit, with an adapter cable per rig.
-- Signals: AF input, FSK, PTT and GND, plus one spare for AF output in case
-  AFSK transmit is added later.
+- The unit has one 6-pin mini-DIN jack, mounted on a pitch-conversion board.
+  Its pinout mirrors the RTTY/DATA jack of the FTDX10, so a straight cable
+  with all six conductors joins the two. Other rigs take an adapter cable.
+
+| Pin | Unit | FTDX10 RTTY/DATA |
+|---|---|---|
+| 1 | AF output, spare in case AFSK transmit is added later | DATA IN |
+| 2 | Rig ground | GND |
+| 3 | PTT | DATA PTT |
+| 4 | FSK | SHIFT |
+| 5 | AF input | DATA OUT |
+| 6 | Not connected | SQL OUT |
+
+- The FTDX10 column comes from the page "RTTY (FSK) Operation" of the FTDX10
+  Operation Manual as transcribed by ManualsLib. Confirm it against the
+  manual itself under item 8 of "To Check Before Implementing".
+- Pin 2 is the return for the AF and for the keying current alike.
+- The shell of the jack and the shield of the cable connect to the rig's
+  ground only. Joining them to the USB ground or the USB shield, directly or
+  through a metal enclosure, defeats the isolation.
 
 ## 5. Working Around RP2350-E9 (Stepping A2)
 
@@ -266,8 +310,10 @@ version and source location, datasheet section, manual page) under it.
 
 - The pin assignment. The Tiny 2350 exposes few GPIOs. Decide whether to keep
   3–4 pins free for I2S in addition to FSK, PTT and the ADC input.
-- Whether to isolate with a transformer.
 - How to switch the gain (jumper or trimmer).
+- The load on the transformer secondary. 10 kΩ matches the transformer but
+  halves the level from a 10 kΩ rig output; around 100 kΩ keeps the level but
+  may peak at the high end. Measure both on the prototype.
 - The control command set, including whether it follows the TinyFSK protocol
   so that the existing `tinyfsk.fsk` can drive the unit from MMTTY. The
   TinyFSK protocol has not been checked against its documentation.
