@@ -129,9 +129,46 @@ connected with `embassy-sync` Channel / Signal.
 - The scaffold halts on panic with `panic-halt`. Once the FSK / PTT outputs
   exist, replace it with a handler that releases both before anything else.
 
+### Control Port Framing
+
+One text protocol serves both a person typing into a serial terminal and a
+program. There is no binary mode.
+
+- Input is assembled into lines. CR, LF and CRLF each end a line: an LF
+  right after a CR is dropped. Empty lines are ignored.
+- BS (0x08) and DEL (0x7F) delete the last character of the line being
+  assembled.
+- Command names are not case-sensitive. Transmit text is converted to upper
+  case, since Baudot has no lower case.
+- Ctrl-C (0x03) aborts the transmission and discards the queue as soon as it
+  arrives, in every mode and without waiting for the end of the line. It is
+  handled byte by byte, before line assembly.
+- Ctrl-S (0x13) and Ctrl-Q (0x11) are not given any meaning: a terminal with
+  XON / XOFF flow control consumes them.
+- The firmware does not echo its input. The terminal's local echo shows what
+  is typed.
+- Each command is answered with one line, `OK`, or `ERR` followed by a reason
+  a person can read. Toward the PC the port also carries logs, an echo of the
+  characters as they are sent and, later, decoded text. Each of those lines
+  begins with a tag naming its kind. The tags are part of the command set.
+
+### Transmit Text
+
+- The text of a transmit command is the rest of its line. No CR or LF is
+  appended, so one sentence can be sent across several commands, and a line
+  break is written with escapes.
+- A backslash (0x5C) starts an escape: `\r` is CR, `\n` is LF and `\a` is
+  BEL. Baudot has no backslash, so reserving it takes no character away. Any
+  other escape is answered with `ERR`.
+- Keyboard mode, entered by a command, queues each character as it arrives,
+  and the end of a line, as defined above, is sent as CR LF. Ctrl-Z (0x1A)
+  leaves the mode and releases PTT once the queue has been sent in full.
+  Ctrl-C aborts as in any mode.
+
 ### Control Commands (candidates; the command set is not designed yet)
 
 - Transmit text
+- Enter keyboard mode
 - PTT on / off
 - Abort the transmission and discard the queue
 - Baud rate
@@ -139,10 +176,6 @@ connected with `embassy-sync` Channel / Signal.
 - PTT delay
 - Status query
 - Digital gain
-
-Toward the PC the port carries command replies, logs, an echo of the
-characters as they are sent and, later, decoded text. Each line is tagged
-with its kind. The format is part of the command set.
 
 ### Audio
 
@@ -474,9 +507,11 @@ version and source location, datasheet section, manual page) under it.
 - The load on the transformer secondary. 10 kΩ matches the transformer but
   halves the level from a 10 kΩ rig output; around 100 kΩ keeps the level but
   may peak at the high end. Measure both on the prototype.
-- The control command set, including whether it follows the TinyFSK protocol
-  so that the existing `tinyfsk.fsk` can drive the unit from MMTTY. The
-  TinyFSK protocol has not been checked against its documentation.
+- The control command set: the command names and their syntax, and the tags
+  of the lines sent toward the PC. Also whether it follows the TinyFSK
+  protocol so that the existing `tinyfsk.fsk` can drive the unit from MMTTY.
+  The TinyFSK protocol has not been checked against its documentation, nor
+  whether it fits the framing in "Control Port Framing".
 - What happens to a transmission in progress when the PC closes the control
   port, and whether a DTR drop or SEND_BREAK aborts it.
 - The license of the hardware design files. pid.codes requires one once
