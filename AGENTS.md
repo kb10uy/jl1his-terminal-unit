@@ -20,6 +20,8 @@ FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
   (`terminal-unit-core`) is a `no_std` library free of platform dependencies,
   for logic that is tested on the host. `firmware/` (`terminal-unit-firmware`)
   is the RP2350 binary and depends on it.
+- `hardware/` holds the KiCad 10 project of the rig interface. The schematic
+  is `hardware/terminal-unit.kicad_sch`.
 - The firmware targets the Cortex-M33 cores of the RP2350
   (`thumbv8m.main-none-eabihf`) and uses `embassy-rp`, `embassy-usb` and
   `embassy-sync`.

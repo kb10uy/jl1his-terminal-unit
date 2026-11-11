@@ -166,6 +166,11 @@ of the ADC.
 
 ## 4. Analog Circuits
 
+The schematic is `hardware/terminal-unit.kicad_sch`, drawn with KiCad 10. Its
+component values are starting points for the prototype, not decisions. The
+Tiny 2350 is not on the sheet yet, so the GPIO and ADC connections end in
+global labels.
+
 ### Receive AF Input Stage
 
 1. Isolation transformer (10 kΩ : 10 kΩ)
