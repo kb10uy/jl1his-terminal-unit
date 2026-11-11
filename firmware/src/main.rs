@@ -55,7 +55,7 @@ async fn main(_spawner: Spawner) {
     let fsk_output = FskOutput::new(Pio::new(p.PIO0, Irqs), p.PIN_25);
 
     let mut usb_config = Config::new(USB_VID, USB_PID);
-    usb_config.product = Some("RTTY Terminal Unit");
+    usb_config.product = Some("JL1HIS RTTY Terminal Unit");
 
     let mut config_descriptor = [0; 256];
     let mut bos_descriptor = [0; 256];
