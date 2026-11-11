@@ -1,25 +1,22 @@
 # RTTY Terminal Unit Design
 
-Decisions from the design discussion. The firmware presents the UAC
-microphone and streams a test tone through it, runs the control port and
-keys FSK from a PIO state machine, whose output is the on-board LED until the
-rig interface is wired; PTT is only logged. No other part of the stages below
-is implemented. Items marked "unverified" come from
+Decisions from the design discussion. Items marked "unverified" come from
 memory and have not been checked against source code, datasheets or manuals.
-Once an item is verified, remove the mark and cite the source.
+
+Implemented so far: the UAC microphone, which streams a test tone, the
+control port, and FSK keying from a PIO state machine, whose output is the
+on-board LED until the rig interface is wired. PTT is only logged.
 
 ## 1. Purpose
 
 Build an RTTY terminal unit around the RP2350. The PC sees it as a composite
 USB device with:
 
-- USB Audio input (microphone direction): captures the rig's receive AF and
-  sends it to the PC. Demodulation runs on the PC for now (MMTTY and the
-  like).
-- A serial port: takes text commands from the PC that key FSK, control PTT
-  and change settings.
-
-On-board demodulation on the RP2350 is a later goal.
+- USB Audio input (microphone direction): the rig's receive AF. Demodulation
+  runs on the PC for now (MMTTY and the like); on-board demodulation is a
+  later goal.
+- A serial port: text commands from the PC that key FSK, control PTT and
+  change settings.
 
 ## 2. Decided
 
@@ -29,30 +26,25 @@ On-board demodulation on the RP2350 is a later goal.
   source is given, the board facts in this document come from the Pico 2
   datasheet (RP-008299-DS-3, release of 2026-07-03),
   `pip-assets.raspberrypi.com/categories/1005-raspberry-pi-pico-2/documents/RP-008299-DS-3-pico-2-datasheet.pdf`.
-- On-board LED: the user LED on GPIO 25 is active high: pico-sdk
+- On-board LED: GPIO 25, active high (pico-sdk
   `src/boards/include/boards/pico2.h` sets `PICO_DEFAULT_LED_PIN` to 25 and
-  does not define `PICO_DEFAULT_LED_PIN_INVERTED`. For now it is the output
-  pin of the FSK keyer, so it is lit whenever the FSK optocoupler would be
-  on. There is no heartbeat blink. `main.rs` hands the pin to
-  `FskOutput::new`, and that is the only place that names it.
-- Tiny 2350: the Cargo feature `tiny2350` of the firmware moves the FSK
-  output to the green element of that board's RGB LED on GPIO 19. Its LED
-  is on GPIO 18 to 20 and active low (Pimoroni product page,
-  `shop.pimoroni.com/products/tiny-2350`; pico-sdk
-  `src/boards/include/boards/pimoroni_tiny2350.h` names the pins and makes
-  green the default LED). `FskOutput::new` therefore takes the polarity of
-  the pin and inverts the pad output (`Pin::set_output_inversion`,
-  `embassy-rp` 0.10.0 `src/pio/mod.rs`), so the state machine and the fault
-  handlers stay the same and the LED is still lit when the optocoupler would
-  be on. The feature changes nothing else.
+  does not define `PICO_DEFAULT_LED_PIN_INVERTED`). For now it is the output
+  pin of the FSK keyer: dark while nothing is transmitted and lit whenever
+  the FSK optocoupler would be on. There is no heartbeat.
+- Tiny 2350: the Cargo feature `tiny2350` moves the FSK output to the green
+  element of that board's RGB LED on GPIO 19, which is active low (Pimoroni
+  product page, `shop.pimoroni.com/products/tiny-2350`; pico-sdk
+  `src/boards/include/boards/pimoroni_tiny2350.h`). `FskOutput::new` takes
+  the polarity of the pin and inverts the pad output
+  (`Pin::set_output_inversion`, `embassy-rp` 0.10.0 `src/pio/mod.rs`), so
+  the state machine and the fault handlers stay the same.
 - Chip stepping: not known until the Pico 2 is at hand. The Tiny 2350 is
   marked RP2350A0A2, stepping A2, which erratum RP2350-E9 affects. The design
   keeps the E9 workarounds either way.
-- Debug: the Pico 2 brings SWD out on a 3-pin debug header (section 5.8).
-  Firmware is flashed through a debug probe with `probe-rs`, and logs over
-  defmt-rtt. The `BOOTSEL` command of the control port stays, so that a unit
-  without a probe attached can still be reflashed over USB. Logs and status
-  for the PC go out through the control port once it exists.
+- Debug: SWD is on the Pico 2's 3-pin debug header (section 5.8). Firmware
+  is flashed through a debug probe with `probe-rs` and logs over defmt-rtt.
+  The `BOOTSEL` command of the control port stays, so that a unit without a
+  probe can still be reflashed over USB.
 - Pins: the headers expose 26 GPIOs, three of them ADC inputs. GPIO 23
   drives the regulator's power-save pin, GPIO 24 senses VBUS, GPIO 25
   drives the user LED and GPIO 29 measures VSYS / 3 (section 3.1).
@@ -78,21 +70,20 @@ On-board demodulation on the RP2350 is a later goal.
 
 ### Firmware
 
-- Language and framework: Rust + embassy (`embassy-rp`, `embassy-usb`)
+- Language and framework: Rust + embassy (`embassy-rp`, `embassy-usb`,
+  `embassy-sync`).
 - USB configuration: UAC (microphone, mono 48 kHz / 16 bit) + one CDC ACM
   port, the control port.
-  - The control port takes line-based text commands. The text to transmit
-    and PTT are commands like any other, in the same stream as the commands
-    that change settings and query status, so their order is defined. Later
-    the port also carries decoded text.
-  - There is no port that takes raw Baudot at 45 baud / 5 bit with PTT on
-    RTS / DTR. Its only use was to let MMTTY open the unit as a UART with
-    nothing added on the PC, and it depended on Windows passing that line
-    coding through unchanged, which was never checked.
-  - MMTTY can still transmit through the unit with an `.fsk` add-on on the
-    PC that translates to the command protocol, as JA7UDE's `tinyfsk.fsk`
-    does for TinyFSK (https://www.qsl.net/ja7ude/tinyfsk/index.html). No
-    such add-on is planned yet.
+- The control port takes line-based text commands. The text to transmit and
+  PTT are commands like any other, in the same stream as the commands that
+  change settings and query status, so their order is defined. Later the
+  port also carries decoded text.
+- There is no port that takes raw Baudot at 45 baud / 5 bit with PTT on
+  RTS / DTR, as MMTTY keys a UART. It depended on Windows passing that line
+  coding through unchanged, which was never checked. MMTTY can still
+  transmit through an `.fsk` add-on on the PC that translates to the command
+  protocol, as JA7UDE's `tinyfsk.fsk` does for TinyFSK
+  (https://www.qsl.net/ja7ude/tinyfsk/index.html). None is planned yet.
 
 ### License
 
@@ -105,15 +96,13 @@ hardware design files is undecided.
 - VID 0x1209 with a PID allocated by pid.codes. The PID has not been
   requested yet.
 - Until it is allocated, the firmware uses the pid.codes test PIDs
-  1209:0001–0010 (https://pid.codes/1209/), starting at 0001. Move to the
-  next one whenever the descriptor configuration changes, because Windows
-  caches the old configuration. Adding the control port moved it to 0002.
-- To request a PID (https://pid.codes/howto/), the repository has to be
-  public and carry a LICENSE file with a recognised open source license. If
-  it holds both hardware and software, both need one. The request is a pull
-  request to the pid.codes repository adding `org/<organisation>/index.md`
-  and `1209/<PID>/index.md` for an unused PID outside the reserved 0xxx and
-  1xxx ranges.
+  1209:0001–0010 (https://pid.codes/1209/). Move to the next one whenever
+  the descriptor configuration changes, because Windows caches the old
+  configuration. The firmware is at 0002.
+- A request (https://pid.codes/howto/) needs a public repository with a
+  recognised open source license, for the hardware as well as the software.
+  It is a pull request to the pid.codes repository for an unused PID outside
+  the reserved 0xxx and 1xxx ranges.
 
 ## 3. Firmware Design
 
@@ -126,8 +115,7 @@ connected with `embassy-sync` Channel / Signal.
 
 The control port and the transmitter meet at the `Keyer` trait in
 `terminal_unit_core::control`. Line assembly, command parsing, settings and
-the Baudot conversion live in `core` behind it and are tested on the host;
-the FSK transmit task implements it.
+the Baudot conversion live in `core` behind it and are tested on the host.
 
 - `apply` takes the settings after every `SET` and `DEFAULTS`.
 - `enqueue` takes code words, all or none: it fails with `QueueFull` when
@@ -142,38 +130,34 @@ the FSK transmit task implements it.
 - `status` reports whether PTT is keyed and how many words are queued and
   free.
 
-`firmware/app/src/keyer.rs` implements it. `FskKeyer` holds the 8192-word queue
-and follows `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`; `FskOutput`, in
-`keyer/output.rs` beside it, owns the PIO state machine that drives the FSK
-pin. PTT has no pin yet and is logged over defmt. `SAVE` goes through the
+`FskKeyer` in `firmware/app/src/keyer.rs` implements it: it holds the
+8192-word queue and follows `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`.
+`FskOutput`, in `keyer/output.rs`, owns the PIO state machine that drives the
+FSK pin. PTT has no pin yet and is logged over defmt. `SAVE` goes through the
 `Storage` trait, which the firmware answers with an error until check 9 is
 done.
 
 ### FSK Transmit
 
-- A PIO state machine generates each character with the data bits set by
-  `SET BITS` (5 to 8) and the stop bits set by `SET STOP` (1, 1.5 or 2).
-- The baud rate is set by a control command, so 45.45 baud is given exactly.
-  The firmware ignores the line coding of the control port.
 - The state machine (PIO0, state machine 0) runs at the system clock without
-  a divider and sends one character for each word of its TX FIFO. The word
-  holds the levels of the pin for the whole character, one bit for each half
-  bit, first half bit in bit 0. The program shifts them out and holds each
-  for the count in its Y register plus 4 clock cycles. The pull threshold of
-  the output shift register is the number of half bits of a character, so the
-  program needs no bit counter. It raises PIO interrupt flag 0 when it starts
-  a character and flag 1 when it has finished one. With the FIFO empty it
-  stalls and keeps the last level.
-- `terminal_unit_core::fsk` turns a code word into that word and is tested on
-  the host: the start bit (space), the data bits LSB first, a 1 as mark, and
-  the stop bits (mark), each bit as two half bits, with `INVERT` already
-  applied. The half bit is the unit: it is the clock divided by twice the
-  baud rate, rounded to the nearest cycle, and the stop bits are two, three
-  or four of them, so 1.5 stop bits are exactly 1.5 bits. The longest
-  character, 8 data bits and 2 stop bits, is 22 half bits. At 150 MHz a half
-  bit is 62500 cycles at 1200 baud and 7.5 million at 10 baud, so the
-  rounding stays under 10 ppm. The flags and the pull add 3 cycles, 20 ns, to
-  the stop bits of each character. The accuracy is that of the crystal.
+  a divider and sends one character for each word of its TX FIFO, with the
+  data bits of `SET BITS` (5 to 8) and the stop bits of `SET STOP` (1, 1.5
+  or 2). The word holds the levels of the pin for the whole character, one
+  bit for each half bit, first half bit in bit 0. The program shifts them
+  out and holds each for the count in its Y register plus 4 clock cycles.
+  The pull threshold of the output shift register is the number of half bits
+  of a character, so the program needs no bit counter. It raises PIO
+  interrupt flag 0 when it starts a character and flag 1 when it has
+  finished one. With the FIFO empty it stalls and keeps the last level.
+- `terminal_unit_core::fsk` turns a code word into that word: the start bit
+  (space), the data bits LSB first, a 1 as mark, and the stop bits (mark),
+  each bit as two half bits, with `INVERT` already applied. The half bit is
+  the clock divided by twice the baud rate, rounded to the nearest cycle,
+  and the stop bits are two, three or four of them, so 1.5 stop bits are
+  exactly 1.5 bits. The longest character, 8 data bits and 2 stop bits, is
+  22 half bits. At 150 MHz a half bit is 62500 cycles at 1200 baud and
+  7.5 million at 10 baud, so the rounding stays under 10 ppm. The flags and
+  the pull add 3 cycles, 20 ns, to the stop bits of each character.
 - The half-bit count and the pull threshold change only when `BAUD`, `BITS`,
   `STOP` or `INVERT` has changed. The transmit task then waits until the
   character being sent has finished, stops the state machine, loads Y through
@@ -186,33 +170,23 @@ done.
   without a gap. The sleep sets only the moment of the decision; the PIO
   alone times the signal. If the task is late, the stop bits stretch, which a
   receiver takes as idle mark.
-- With `INVERT OFF`, mark turns the FSK optocoupler off and space turns it
-  on, the usual keying in which an open input is mark. `INVERT ON` swaps
-  them. The polarity each rig expects is still to be read from its manual
-  (check 8). The pin is high when the optocoupler is to be on.
+- The pin is high when the optocoupler is to be on. With `INVERT OFF`, mark
+  turns the optocoupler off and space turns it on, the usual keying in which
+  an open input is mark. `INVERT ON` swaps them. The polarity each rig
+  expects is still to be read from its manual (check 8).
 - While PTT is released the pin is low whatever `INVERT` says. From the
   moment PTT is keyed until it is released the pin carries mark between
   characters: during `TXDELAY`, during `TXTAIL`, which starts when flag 1
   reports the end of the last stop bits, and with `DIDDLE OFF` while the
   queue is empty. The task sets that level with an executed `SET` while the
-  state machine is stopped.
-  `DIDDLE LTRS` sends LTRS only with `BITS 5`; otherwise the pin holds mark.
+  state machine is stopped. `DIDDLE LTRS` sends LTRS only with `BITS 5`;
+  otherwise the pin holds mark.
 - An abort, and `TOT` expiring, stop the state machine at once, also in the
   middle of a character: the task disables it, forces the pin low, empties
   the FIFO and restarts the program.
-- A transmit command carries text. The firmware converts it to Baudot and
-  inserts the LTRS / FIGS shifts. The conversion lives in `core` and is
-  tested on the host.
-- The FSK transmit task takes code words and PTT requests from a queue and
-  does not know what filled it. The command parser is the only source now; a
-  raw port could be added later as a second one without changing the task.
-- PTT is keyed and released by commands. A release takes effect only after
-  the queue is empty and the last character has been sent in full.
 - The control port never stops reading because the transmit queue is full.
   A transmit command that does not fit is answered with an error, so that an
   abort never waits behind queued text.
-- The FSK polarity (which of mark / space maps to open / closed) can be
-  inverted by a control command.
 - `firmware/app/src/fault.rs` holds the panic handler and the HardFault
   handler. Both first disable the state machines of PIO0 and force the FSK
   pin low through the registers, without the driver. The panic handler then
@@ -242,7 +216,7 @@ The protocol of the control port, its commands, settings and limits, is in
   integer divisions.
 - Oversample at 192 kHz or more and low-pass filter before decimating to
   48 kHz. The analog RC alone does not provide enough rejection for direct
-  48 kHz capture. See `circuit-review.md` for the calculated response.
+  48 kHz capture.
 - The UAC capture endpoint is asynchronous and sends samples on the device's
   clock.
 - Samples pass through an interface boundary inside the firmware, so that an
@@ -250,8 +224,8 @@ The protocol of the control port, its commands, settings and limits, is in
 
 ### UAC Microphone
 
-`embassy-usb` has no UAC microphone class, so `firmware/app/src/microphone.rs`
-writes the UAC 1.0 descriptors itself.
+`embassy-usb` has no UAC microphone class (check 1), so
+`firmware/app/src/microphone.rs` writes the UAC 1.0 descriptors itself.
 
 - Audio control interface: Input Terminal (Microphone, 0x0201) → Output
   Terminal (USB Streaming, 0x0101). There is no Feature Unit, so the host
@@ -283,14 +257,12 @@ of the ADC.
 
 The schematic is `hardware/terminal-unit.kicad_sch`, drawn with KiCad 10. Its
 component values are starting points for the prototype, not decisions. The
-Pico 2 is on the sheet as A1, drawn with KiCad's `RaspberryPi_Pico` symbol,
-which also covers the Pico 2, and global labels join it to the circuits.
+Pico 2 is on the sheet as A1, and global labels join it to the circuits.
 
 The USB side has two ground nets. GNDA carries the grounds of the receive AF
 stage and of the op-amp supply and returns to AGND on pin 33. GND carries
 the grounds of the FSK / PTT drivers and returns to the GND pins. The two
-join only inside the Pico 2. The 3V3 pin, the GND pins and AGND are power
-outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
+join only inside the Pico 2.
 
 ### Receive AF Input Stage
 
@@ -301,24 +273,20 @@ outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
 4. RC anti-aliasing LPF (a few kHz to 10 kHz)
 5. Series resistor + small capacitor → ADC pin
 
-- The op-amp is the MCP6022, a dual with rail-to-rail input and output. It
-  runs from 2.5 V to 5.5 V, has a gain bandwidth product of 10 MHz and an
-  input noise density of 8.7 nV/√Hz at 10 kHz, swings to within 15 mV of
-  ground and 20 mV of the supply into 10 kΩ, draws 1 mA per amplifier and has
-  an input bias current of 1 pA. It comes in 8-lead PDIP, SOIC and TSSOP
-  (Microchip DS20001685E, front page and section 1.0).
-- The schematic currently loads the transformer secondary with R4 = 10 kΩ.
-  This is a provisional value; the choice between 10 kΩ and around 100 kΩ
-  remains undecided. At 10 kΩ, the rig's output impedance cannot be ignored.
-- A trimmer in the feedback path sets the gain between 3 and 23, so the level
-  is adjusted once per rig without changing parts. This is the midband AC
-  gain; R11 and C7 make the DC gain unity. Using the unverified FTDX10
-  assumptions below and R4 = 10 kΩ, a gain around 16–17 gives about
-  2.4 Vp-p at the ADC, allowing for the transformer's winding resistance
-  but not its magnetizing inductance or leakage. Measure the actual level
-  before choosing the gain. See `circuit-review.md`.
-- The trimmer RV1 is a Bourns 3296W. The layout uses KiCad's footprint
-  `Potentiometer_Bourns_3296W_Vertical`, three pins in a row 2.54 mm apart.
+- The op-amp is the MCP6022, a dual with rail-to-rail input and output that
+  runs from 2.5 V to 5.5 V: gain bandwidth product 10 MHz, input noise
+  density 8.7 nV/√Hz at 10 kHz, output to within 15 mV of ground and 20 mV
+  of the supply into 10 kΩ (Microchip DS20001685E, front page and section
+  1.0).
+- R4 loads the transformer secondary with 10 kΩ for now. The value is
+  undecided (section 8).
+- The trimmer RV1, a Bourns 3296W in the feedback path, sets the gain
+  between 3 and 23, so the level is adjusted once per rig without changing
+  parts. This is the midband AC gain; R11 and C7 make the DC gain unity.
+  Using the unverified FTDX10 assumptions below and R4 = 10 kΩ, a gain
+  around 16–17 gives about 2.4 Vp-p at the ADC, allowing for the
+  transformer's winding resistance but not its magnetizing inductance or
+  leakage. Measure the actual level before choosing the gain.
 - Overvoltage protection: a series resistor, then two BAT43 Schottky diodes
   in DO-35 that clamp the op-amp input to the supply rails. The BAT43
   withstands 30 V, leaks at most 0.5 µA at 25 V, drops 0.26 V to 0.33 V at
@@ -331,12 +299,10 @@ outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
   10 kΩ output loses the low end.
 - The transformer is the Sansui ST-78 made by Hashimoto Denki: 10 kΩ to
   10 kΩ with a centre-tapped secondary, DC resistance 330 Ω and 420 Ω ±20 %,
-  insulation resistance 100 MΩ or more at 100 V DC, case CB-19, 13 g. The
-  catalogue lists the case with leads and with PCB pins and gives the
-  frequency response as a graph from 0.2 kHz to 10 kHz (Hashimoto Denki,
-  "トランジスタ用小型トランス" ST series catalogue,
-  `akizukidenshi.com/goodsaffix/st.pdf`). The unit uses the case with leads,
-  which reach any hole of a universal board.
+  in the case with leads, which reach any hole of a universal board. The
+  catalogue gives the frequency response as a graph from 0.2 kHz to 10 kHz
+  (Hashimoto Denki, "トランジスタ用小型トランス" ST series catalogue,
+  `akizukidenshi.com/goodsaffix/st.pdf`).
 
 ### Rig-Side Specifications and Assumptions
 
@@ -348,7 +314,7 @@ outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
 - The FTDX10 Operation Manual (2307A-LS-1), p. 64, confirms the connector
   mapping. Its p. 91 documents DATA OUT LEVEL adjustment, so "fixed level"
   must not be interpreted as independent of menu settings. The numerical AF
-  specifications and FSK / PTT electrical limits above remain unverified.
+  specifications and FSK / PTT electrical limits remain unverified.
   Source: [Yaesu manual](https://yaesu.com/Files/4CB893D7-1018-01AF-FA97E9E9AD48B50C/FTDX10_OM_ENG_EH076H202_2307A-LS-1.pdf).
 - The IC-7300 Basic Manual, pp. 12-1–12-2, specifies the AF values above
   and approximately 200 mV rms at the default 50% output-level setting.
@@ -365,14 +331,13 @@ outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
   current for each rig rather than using the FSK figure for PTT. The FTDX10
   electrical specifications remain unverified (Icom manual, p. 12-1).
 - Each output is a Toshiba TLP785 of rank GB, a phototransistor coupler in
-  DIP4. Rank GB has a current transfer ratio of 100 % to 600 % at
-  IF = 5 mA and VCE = 5 V. The saturation voltage is at most 0.4 V at
-  IC = 2.4 mA and IF = 8 mA, the collector-emitter rating is 80 V, the LED
-  forward voltage is 1.0 V to 1.3 V at 10 mA and the isolation voltage is
-  5000 Vrms. Saturated with a 1.9 kΩ load, it turns on in 1.5 µs and off in
-  50 µs, typically (Toshiba TLP785 datasheet, 2012-02-20). A coupler with a
-  logic output would be faster but needs a supply on the rig side, which the
-  rig's jack does not provide.
+  DIP4: current transfer ratio 100 % to 600 % at IF = 5 mA and VCE = 5 V,
+  saturation voltage at most 0.4 V at IC = 2.4 mA and IF = 8 mA,
+  collector-emitter rating 80 V, LED forward voltage 1.0 V to 1.3 V at
+  10 mA, isolation 5000 Vrms. Saturated with a 1.9 kΩ load, it typically
+  turns on in 1.5 µs and off in 50 µs (Toshiba TLP785 datasheet,
+  2012-02-20). A coupler with a logic output would be faster but needs a
+  supply on the rig side, which the rig's jack does not provide.
 - Each LED runs from 3V3 through 150 Ω (R6 / R7), and a 2SC1815 (Q1 / Q2)
   switches its cathode to ground. The LED current is about 14 mA nominally.
   With the supply 5 % low, VF = 1.3 V, VCE(sat) = 0.25 V and the resistor
@@ -391,9 +356,8 @@ outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
   proposal is to reduce R12 / R13 to 1 kΩ and configure the GPIO drive
   strength to 8 mA, giving a forced gain around 5–10 for the estimated
   LED load. This still needs verification with the purchased transistor.
-  With the present 4.7 kΩ resistors and pull-downs each GPIO supplies about
-  2 mA. The two LED branches together draw about 27 mA from 3V3; GPIO
-  currents add to this supply load.
+  The two LED branches together draw about 27 mA from 3V3, and each GPIO
+  supplies about 2 mA.
 - So that nothing transmits right after power-up or while pins are
   undefined, R8 / R9 pull each GPIO to ground through 2.2 kΩ, which holds
   the transistor and so the LED off. 2.2 kΩ is well under the 8.2 kΩ limit
@@ -421,8 +385,8 @@ outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
 | 5 | AF input | DATA OUT |
 | 6 | Not connected | SQL OUT |
 
-- The FTDX10 column is confirmed against the official FTDX10 Operation
-  Manual (2307A-LS-1), p. 64; see the link under rig-side specifications.
+- The FTDX10 column is confirmed against the FTDX10 Operation Manual
+  (2307A-LS-1), p. 64.
 - Pin 2 is the return for the AF and for the keying current alike.
 - The shell of the jack and the shield of the cable connect to the rig's
   ground only. Joining them to the USB ground or the USB shield, directly or
@@ -431,10 +395,10 @@ outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
 ### Perfboard Layout
 
 `hardware/terminal-unit.kicad_pcb` is not a board to be fabricated. It places
-the parts on a universal board with a 2.54 mm grid, 37 by 28 holes, with the
-Pico 2 in sockets on the same board. With 3.5 mm beyond the outer holes that
-is about 98 mm by 76 mm. It is a draft, and the board to build on has not
-been chosen.
+the parts on a universal board with a 2.54 mm grid, 37 by 28 holes, about
+98 mm by 76 mm, with the Pico 2 in sockets on the same board. It is a draft,
+and the board to build on has not been chosen. The file holds the placement;
+only its conventions are listed here.
 
 - Hole (1, 1) is at (50.8 mm, 50.8 mm), so a 2.54 mm grid in the PCB editor
   falls on the holes. The `Dwgs.User` layer shows the holes and numbers
@@ -445,28 +409,13 @@ been chosen.
 - Columns 27 and 28 stay empty as the isolation gap, and a rule area keeps
   tracks and pads out of them. The USB side is columns 1 to 26 and the rig
   side columns 29 to 37. Only T1, U2 and U3 straddle the gap.
-- GNDA returns to AGND on pin 33 and the GND of the drivers to pin 18. The
-  footprint of the Pico 2 on the board lists its seven GND pads as a jumper
-  pad group, which the library footprint does not, so that DRC treats them
-  as joined inside the module. The LED supply is a wire of its own from the
-  3V3 pin.
-- The ground of the drivers goes round to pin 18 because the footprint
-  shared by the Pico boards keeps copper out of the area under the antenna
-  of the W variants, at the end of the board away from USB.
-- The FSK / PTT drivers fill columns 21 to 26 beyond the end of the Pico 2,
-  FSK in rows 9 to 15 and PTT in rows 16 to 22. All their resistors lie
-  flat, one row each, and one ground rail in column 23 runs under them.
-- Where pads sit in adjacent holes DRC reports overlapping courtyards. T1
-  reaches to within about 1 mm of the top edge drawn for the board.
-- The receive AF stage keeps at least one empty hole between neighbouring
-  parts where the nets allow, and leaves rows 1 to 3 and row 19, next to
-  the Pico 2, free. The 3V3, VBIAS and GNDA rails run along rows 4, 5 and 7
-  above U1, the three signal nets of U1A along rows 9 to 11 to its right,
-  and R5 runs straight down to GP26.
-- The breakout board of J1 lies flat over columns 30 to 36 with its pins in
-  column 31, rows 13 to 20, and the jack facing the edge of the board. C1
-  sits above it in row 10. The rig side needs two insulated wires: FSK from
-  U2 to pin 4, and a link between the GND_RIG of U2 and that of U3.
+- GNDA returns to AGND on pin 33 and the GND of the drivers to pin 18,
+  because the footprint shared by the Pico boards keeps copper out of the
+  area under the antenna of the W variants. The footprint of the Pico 2 on
+  the board lists its seven GND pads as a jumper pad group, which the
+  library footprint does not, so that DRC treats them as joined inside the
+  module.
+- Where pads sit in adjacent holes DRC reports overlapping courtyards.
 - Two footprints rest on assumptions. `ST-78_Leads_Perfboard` takes the body
   of T1 as 16.5 mm by 20 mm, read from the dimension table of the ST
   catalogue without its drawing, and puts the lead holes where the layout
@@ -501,18 +450,14 @@ been chosen.
   supply, carries the ripple of a switching regulator. Measure with GPIO 23
   low and high, and decide from the result whether to hold it high, filter
   the op-amp supply or fit an external reference.
-- Evaluation: once USB Audio works, record on the PC and look at an FFT.
-  Measure the noise floor and spurs with no signal, and SINAD with a sine
-  wave near full scale.
+- Evaluation: once the ADC feeds USB Audio, record on the PC and look at an
+  FFT. Measure the noise floor and spurs with no signal, and SINAD with a
+  sine wave near full scale.
 
 ## 7. To Check Before Implementing
 
-When an item is checked, tick it and write the result and its source (crate
-version and source location, datasheet section, manual page) under it.
-
 - [x] 1. Whether `embassy-usb` has a UAC class for the microphone direction
-  (device → PC). As recalled, only the speaker direction exists. If not,
-  write the descriptors and the isochronous IN endpoint ourselves.
+  (device → PC).
   - No. `embassy-usb` 0.6.0 `src/class/uac1/mod.rs` declares only
     `pub mod speaker`, and its `class_codes` and `terminal_type` modules are
     private. The descriptors are written in `firmware/app/src/microphone.rs`
@@ -546,25 +491,20 @@ version and source location, datasheet section, manual page) under it.
     resets nothing.
 - [x] 6. The board's exposed GPIOs, and filtering of the ADC's analog supply
   and reference.
-  - Pico 2: 26 GPIOs on the headers, three of them ADC inputs; ADC_AVDD is
-    3V3 through 201 Ω into 2.2 µF, brought out as ADC_VREF, with AGND as a
-    separate pin. See "Hardware" in section 2 for the details and source.
-  - Tiny 2350, the board used before: the PIM721 schematic dated 2024-08-29
-    exposes GP0–GP7 and GP26–GP29 / ADC0–ADC3 on the headers, and GP12 /
-    GP13 on Qw/ST. ADC_IOVDD is connected directly to the common 3V3 rail
-    with 100 nF decoupling (C12); there is no separate ADC supply filter or
-    exposed reference input. The R12 / C32 filter serves VREG_AVDD, not the
-    ADC.
+  - Pico 2: see "Hardware" in section 2.
+  - Tiny 2350, the board used before: GP0–GP7 and GP26–GP29 / ADC0–ADC3 are
+    on the headers. ADC_IOVDD sits directly on the common 3V3 rail with
+    100 nF (C12); there is no separate ADC supply filter or exposed
+    reference input (PIM721 schematic dated 2024-08-29).
     Source: [Pimoroni schematic](https://cdn.shopify.com/s/files/1/0174/1800/files/Pimoroni_Tiny_2350_Schematic.pdf?v=1724926880).
 - [x] 7. The effective resolution of the ADC in the RP2350 datasheet.
-  - Table 1438: 9 bits minimum, 9.5 bits typical. See section 6 above for
-    the source and the different value in the datasheet overview.
+  - See section 6.
 - [ ] 8. The manuals of the FTDX10 and each Icom model: AF output level and
   impedance, FSK / PTT input specification and polarity, pinout.
-  - Partially checked: official FTDX10 connector mapping and DATA OUT LEVEL
-    adjustment, and IC-7300 ACC specifications, are recorded in section 4.
-    FTDX10 numerical AF and keying specifications and other Icom models
-    still need checking.
+  - Partially checked: the FTDX10 connector mapping and DATA OUT LEVEL
+    adjustment, and the IC-7300 ACC specifications, are recorded in section
+    4. The FTDX10 numerical AF and keying specifications and other Icom
+    models still need checking.
 - [ ] 9. How `embassy-rp` writes the flash, whether XIP stops while a sector
   is erased, and what that does to the USB audio stream and the FSK output.
 - [x] 10. How the firmware reboots the RP2350 into BOOTSEL mode with
@@ -598,8 +538,7 @@ version and source location, datasheet section, manual page) under it.
   `ERR`. The proposal is to send ASCII codes as they are, without
   upper-casing, with 7 or 8 bits, and to answer `ERR` with 6.
 - Whether a `PARITY` setting is needed for 7- and 8-bit transfers.
-- The scale and default of `GAIN`. The other defaults are in
-  `control-port.md`.
+- The scale and default of `GAIN`.
 - Whether the unit also follows the TinyFSK protocol, so that the existing
   `tinyfsk.fsk` can drive it from MMTTY. The TinyFSK protocol has not been
   checked against its documentation, nor whether it fits the framing in
@@ -616,4 +555,4 @@ version and source location, datasheet section, manual page) under it.
   - When DTR falls, abort the transmission and release PTT, so that a
     program that dies does not leave PTT keyed.
 - The license of the hardware design files. pid.codes requires one once
-  they are in the repository (see "USB VID / PID").
+  they are in the repository.

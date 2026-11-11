@@ -1,12 +1,9 @@
 # Control Port Protocol
 
-The text protocol of the CDC ACM control port. `terminal_unit_core::control`
-implements it, and the firmware runs it on the control port. The firmware
-keys FSK on the on-board LED for now and only logs PTT over defmt (see
-"Keyer Interface" and "FSK Transmit" in `design.md`), and `SAVE` answers
-`ERR` until settings can be stored in flash. Open points are listed under
-"Undecided" in `design.md`. Items marked "unverified" come from memory, as in
-`design.md`.
+The text protocol of the CDC ACM control port, implemented in
+`terminal_unit_core::control`. `SAVE` answers `ERR` until settings can be
+stored in flash. Open points are listed under "Undecided" in `design.md`.
+Items marked "unverified" come from memory, as in `design.md`.
 
 ## Control Port Framing
 
@@ -47,7 +44,7 @@ program. There is no binary mode.
   releases PTT once the queue has been sent in full and is answered with
   `OK`. Ctrl-C aborts as in any mode.
 - Text is sent as Baudot only, so `TX` and `KEY` are answered with `ERR`
-  unless `BITS` is 5. What they do with other `BITS` is undecided.
+  unless `BITS` is 5.
 - A character that the figures table of `CODE` does not hold is answered with
   `ERR`, and nothing of the command is queued.
 
@@ -78,10 +75,8 @@ not empty.
 | `HELP` | List the command names on one line |
 
 - `SEND` writes data as hexadecimal rather than raw bytes, so it stays a
-  line of text: Ctrl-C keeps working, no line end can be mistaken for data,
-  a tty that is not in raw mode or XON / XOFF flow control cannot alter it,
-  and a sender that stops halfway leaves no parser waiting. Doubling the
-  length costs nothing at RTTY speeds.
+  line of text: Ctrl-C keeps working, and neither a line end, a tty that is
+  not in raw mode nor XON / XOFF flow control can alter the data.
 - `SEND` takes no length; the number of digits gives it. An odd number of
   digits, or a word that does not fit in `BITS`, is answered with `ERR`.
   With `BITS 5` it sends raw Baudot codes, leaving the shifts to the PC,
@@ -105,7 +100,6 @@ not empty.
 
 - Setting names and keyword values are not case-sensitive. `GET` shows
   keywords in upper case and `BAUD` without trailing zeros.
-
 - `DIDDLE`, `USOS` and `CODE` apply to Baudot, with `BITS 5`, only.
 - Settings are stored in flash only by `SAVE`, so that trying values neither
   wears the flash nor keeps them. At power-up the stored settings are
@@ -151,14 +145,13 @@ FIGS where the shift changes. Both figures tables share `-` `?` `:` `(` `)`
 
 ## Limits
 
-- A command line holds up to 16 KB (16384 bytes), not counting its end. A
-  longer line is not run: the rest of it up to its end is discarded and it is
+- A command line holds up to 16384 bytes, not counting its end. A longer
+  line is not run: the rest of it up to its end is discarded and it is
   answered with one `ERR`. Running a truncated line could pass a different
   value, such as `SET BAUD 45.4`.
-- The transmit queue holds 8 KB (8192 code words). A `TX` or `SEND` that
-  does not fit is answered with `ERR` and nothing of it is queued. `SEND`
-  fits a 16 KB line with room for about 8 KB of data. `TX` can need up to
-  twice as many codes as characters because of the inserted shifts. At
+- The transmit queue holds 8192 code words. A `TX` or `SEND` that does not
+  fit is answered with `ERR` and nothing of it is queued. `TX` can need up
+  to twice as many codes as characters because of the inserted shifts. At
   45.45 baud, 8192 characters take about 22 minutes.
 - In keyboard mode a character that does not fit is dropped and answered
   with `ERR`.
@@ -167,14 +160,11 @@ FIGS where the shift changes. Both figures tables share `-` `?` `:` `(` `)`
 
 ## Opening and Closing the Port
 
-- Opening the port resets nothing. An Arduino Uno resets because DTR is
-  wired through a capacitor to its reset pin. Here DTR and RTS reach the
-  firmware only as flags (check 5 in `design.md`), and the firmware ignores
-  the line coding, so the convention of resetting on a 1200 baud open does
-  not apply either. Neither line keys PTT.
+- Opening the port resets nothing. DTR and RTS reach the firmware only as
+  flags (check 5 in `design.md`), and the firmware ignores the line coding,
+  so a 1200 baud open does not reset it either. Neither line keys PTT.
 - Output toward the PC passes through a bounded buffer, and lines that do
   not fit are dropped. Writing to the endpoint waits until the host has
   taken the previous packet, and a host that is not reading must not stop
   command handling or transmission.
-- What the firmware does on DTR changes is undecided; the proposals are
-  under "Undecided" in `design.md`.
+- What the firmware does on DTR changes is undecided.
