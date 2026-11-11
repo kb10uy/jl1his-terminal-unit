@@ -1,4 +1,4 @@
-use crate::keyer::{QUEUE_WORDS, StubKeyer};
+use crate::keyer::{FskKeyer, QUEUE_WORDS};
 use core::fmt;
 use defmt::info;
 use embassy_futures::join::join;
@@ -63,7 +63,7 @@ impl fmt::Write for Reply {
 pub async fn run<'d, D: Driver<'d>>(
     class: CdcAcmClass<'d, D>,
     settings: Settings,
-    mut keyer: &StubKeyer,
+    mut keyer: &FskKeyer,
 ) {
     let (mut sender, mut receiver) = class.split();
     let output = Output::new();

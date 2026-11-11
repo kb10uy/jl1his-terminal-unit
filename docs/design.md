@@ -1,9 +1,10 @@
 # RTTY Terminal Unit Design
 
 Decisions from the design discussion. The firmware presents the UAC
-microphone and streams a test tone through it, and runs the control port
-with a stub in place of the PIO keyer; no other part of the stages below is
-implemented. Items marked "unverified" come from
+microphone and streams a test tone through it, runs the control port and
+keys FSK from a PIO state machine, whose output is the on-board LED until the
+rig interface is wired; PTT is only logged. No other part of the stages below
+is implemented. Items marked "unverified" come from
 memory and have not been checked against source code, datasheets or manuals.
 Once an item is verified, remove the mark and cite the source.
 
@@ -28,10 +29,12 @@ On-board demodulation on the RP2350 is a later goal.
   source is given, the board facts in this document come from the Pico 2
   datasheet (RP-008299-DS-3, release of 2026-07-03),
   `pip-assets.raspberrypi.com/categories/1005-raspberry-pi-pico-2/documents/RP-008299-DS-3-pico-2-datasheet.pdf`.
-- On-board LED: the firmware blinks the user LED on GPIO 25, which is
-  active high: pico-sdk `src/boards/include/boards/pico2.h` sets
-  `PICO_DEFAULT_LED_PIN` to 25 and does not define
-  `PICO_DEFAULT_LED_PIN_INVERTED`.
+- On-board LED: the user LED on GPIO 25 is active high: pico-sdk
+  `src/boards/include/boards/pico2.h` sets `PICO_DEFAULT_LED_PIN` to 25 and
+  does not define `PICO_DEFAULT_LED_PIN_INVERTED`. For now it is the output
+  pin of the FSK keyer, so it is lit whenever the FSK optocoupler would be
+  on. There is no heartbeat blink. `main.rs` hands the pin to
+  `FskOutput::new`, and that argument is the only place that names it.
 - Chip stepping: not known until the Pico 2 is at hand. The Tiny 2350 is
   marked RP2350A0A2, stepping A2, which erratum RP2350-E9 affects. The design
   keeps the E9 workarounds either way.
@@ -129,11 +132,11 @@ the FSK transmit task implements it.
 - `status` reports whether PTT is keyed and how many words are queued and
   free.
 
-`firmware/src/keyer.rs` holds a stub with the 8192-word queue. It follows
-`TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT` with timers, logs each word over defmt
-at the configured character rate and drives no pins. The PIO keyer replaces
-it. `SAVE` goes through the `Storage` trait, which the firmware answers with
-an error until check 9 is done.
+`firmware/src/keyer.rs` implements it. `FskKeyer` holds the 8192-word queue
+and follows `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`; `FskOutput` owns the PIO
+state machine that drives the FSK pin. PTT has no pin yet and is logged over
+defmt. `SAVE` goes through the `Storage` trait, which the firmware answers
+with an error until check 9 is done.
 
 ### FSK Transmit
 
@@ -141,6 +144,51 @@ an error until check 9 is done.
   `SET BITS` (5 to 8) and the stop bits set by `SET STOP` (1, 1.5 or 2).
 - The baud rate is set by a control command, so 45.45 baud is given exactly.
   The firmware ignores the line coding of the control port.
+- The state machine (PIO0, state machine 0) runs at the system clock without
+  a divider and sends one character for each word of its TX FIFO. The word
+  holds the levels of the pin for the whole character, one bit for each half
+  bit, first half bit in bit 0. The program shifts them out and holds each
+  for the count in its Y register plus 4 clock cycles. The pull threshold of
+  the output shift register is the number of half bits of a character, so the
+  program needs no bit counter. It raises PIO interrupt flag 0 when it starts
+  a character and flag 1 when it has finished one. With the FIFO empty it
+  stalls and keeps the last level.
+- `terminal_unit_core::fsk` turns a code word into that word and is tested on
+  the host: the start bit (space), the data bits LSB first, a 1 as mark, and
+  the stop bits (mark), each bit as two half bits, with `INVERT` already
+  applied. The half bit is the unit: it is the clock divided by twice the
+  baud rate, rounded to the nearest cycle, and the stop bits are two, three
+  or four of them, so 1.5 stop bits are exactly 1.5 bits. The longest
+  character, 8 data bits and 2 stop bits, is 22 half bits. At 150 MHz a half
+  bit is 62500 cycles at 1200 baud and 7.5 million at 10 baud, so the
+  rounding stays under 10 ppm. The flags and the pull add 3 cycles, 20 ns, to
+  the stop bits of each character. The accuracy is that of the crystal.
+- The half-bit count and the pull threshold change only when `BAUD`, `BITS`,
+  `STOP` or `INVERT` has changed. The transmit task then waits until the
+  character being sent has finished, stops the state machine, loads Y through
+  the FIFO with executed `PULL` and `MOV` instructions and starts it again.
+- The transmit task pushes one word, waits for flag 0, and then sleeps until
+  the stop bits of that character begin. Only then does it decide what
+  follows: the next queued word, a diddle, or holding mark. It reads the
+  settings at that moment, so a change takes effect between characters, and
+  it pushes the next word during the stop bits, so the next start bit follows
+  without a gap. The sleep sets only the moment of the decision; the PIO
+  alone times the signal. If the task is late, the stop bits stretch, which a
+  receiver takes as idle mark.
+- With `INVERT OFF`, mark turns the FSK optocoupler off and space turns it
+  on, the usual keying in which an open input is mark. `INVERT ON` swaps
+  them. The polarity each rig expects is still to be read from its manual
+  (check 8). The pin is high when the optocoupler is to be on.
+- While PTT is released the pin is low whatever `INVERT` says. From the
+  moment PTT is keyed until it is released the pin carries mark between
+  characters: during `TXDELAY`, during `TXTAIL`, which starts when flag 1
+  reports the end of the last stop bits, and with `DIDDLE OFF` while the
+  queue is empty. The task sets that level with an executed `SET` while the
+  state machine is stopped.
+  `DIDDLE LTRS` sends LTRS only with `BITS 5`; otherwise the pin holds mark.
+- An abort, and `TOT` expiring, stop the state machine at once, also in the
+  middle of a character: the task disables it, forces the pin low, empties
+  the FIFO and restarts the program.
 - A transmit command carries text. The firmware converts it to Baudot and
   inserts the LTRS / FIGS shifts. The conversion lives in `core` and is
   tested on the host.
@@ -154,10 +202,21 @@ an error until check 9 is done.
   abort never waits behind queued text.
 - The FSK polarity (which of mark / space maps to open / closed) can be
   inverted by a control command.
-- The scaffold handles panics with `panic-probe`, which prints the message
-  over defmt and raises a HardFault with `udf` (panic-probe 1.0.0
-  `src/lib.rs`, `hard_fault`). Once the FSK / PTT outputs exist, replace it
-  with a handler that releases both before anything else.
+- `firmware/src/fault.rs` holds the panic handler and the HardFault
+  handler. Both first disable the state machines of PIO0 and force the FSK
+  pin low through the registers, without the driver. The panic handler then
+  prints the message over defmt and raises a HardFault with `udf`, as
+  `panic-probe` did (panic-probe 1.0.0 `src/lib.rs`), which it replaces.
+  Once PTT has a pin, both handlers release it too. A reset returns the pin
+  to its high-impedance default, and the external pull-down holds the
+  optocoupler off.
+- Checked in `embassy-rp` 0.10.0 `src/pio/mod.rs`: `Common::make_pio_pin`
+  selects the PIO function for the pin, after which SIO no longer drives it;
+  `StateMachine::set_pins` and `set_pin_dirs` pause the state machine and
+  execute `SET` instructions; `set_tx_threshold` rewrites the pull
+  threshold alone; `Irq::wait` completes on the PIO interrupt flag and
+  clears it. `PIN_25` implements `PioPin`. None of this has run on hardware
+  yet.
 
 ### Control Port
 

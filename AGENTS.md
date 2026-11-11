@@ -11,11 +11,12 @@ change settings.
 The design is recorded in `docs/design.md`, and the protocol of the control
 port in `docs/control-port.md`. Read them before starting work.
 
-The firmware targets the Pico 2. It blinks the on-board LED, presents a UAC
-microphone that streams a 1 kHz test tone, and runs the control port, whose
-parser and executor live in `core` behind the `Keyer` trait. A stub keyer
-stands in for the transmitter. Next comes PIO-based FSK / PTT behind that
-trait, then the ADC path behind the microphone and on-board demodulation.
+The firmware targets the Pico 2. It presents a UAC microphone that streams a
+1 kHz test tone, and runs the control port, whose parser and executor live in
+`core` behind the `Keyer` trait. A PIO state machine keys FSK behind that
+trait. Until the rig interface is wired, its output pin is the on-board LED
+and PTT is only logged. Next come the FSK / PTT pins of the rig interface,
+then the ADC path behind the microphone and on-board demodulation.
 
 ## Architecture
 
@@ -102,7 +103,9 @@ trait, then the ADC path behind the microphone and on-board demodulation.
 
 Flashing and logging need `probe-rs` and a debug probe on the Pico 2's 3-pin
 SWD header. The firmware logs over defmt-rtt. The on-board LED on GPIO 25
-blinking once a second shows that the firmware is running.
+shows the FSK drive: it is dark while nothing is transmitted and, with
+`INVERT OFF`, lights for every space bit. There is no heartbeat; `PTT ON` on
+the control port makes it flash with the diddle.
 
 The target and the runner are set in `firmware/.cargo/config.toml`, which
 Cargo reads only when it is run inside `firmware/`. The firmware does not

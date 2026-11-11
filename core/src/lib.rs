@@ -3,5 +3,6 @@
 pub mod baudot;
 pub mod command;
 pub mod control;
+pub mod fsk;
 pub mod settings;
 pub mod tone;

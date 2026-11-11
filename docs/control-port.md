@@ -2,8 +2,8 @@
 
 The text protocol of the CDC ACM control port. `terminal_unit_core::control`
 implements it, and the firmware runs it on the control port. The firmware
-keys nothing yet: a stub keyer logs the code words over defmt at the
-configured rate (see "Keyer Interface" in `design.md`), and `SAVE` answers
+keys FSK on the on-board LED for now and only logs PTT over defmt (see
+"Keyer Interface" and "FSK Transmit" in `design.md`), and `SAVE` answers
 `ERR` until settings can be stored in flash. Open points are listed under
 "Undecided" in `design.md`. Items marked "unverified" come from memory, as in
 `design.md`.
@@ -94,7 +94,7 @@ not empty.
 | `BAUD` | `10` to `1200`, up to three decimals, such as `45.45` | `45.45` | Baud rate |
 | `BITS` | `5` to `8` | `5` | Data bits |
 | `STOP` | `1`, `1.5`, `2` | `1.5` | Stop bits |
-| `INVERT` | `ON`, `OFF` | `OFF` | Invert the FSK polarity |
+| `INVERT` | `ON`, `OFF` | `OFF` | Invert the FSK polarity. With `OFF`, mark turns the FSK output off and space turns it on |
 | `TXDELAY` | milliseconds, `0` to `65535` | `100` | Mark sent after PTT is keyed, before the first character |
 | `TXTAIL` | milliseconds, `0` to `65535` | `50` | Wait after the last character before PTT is released |
 | `DIDDLE` | `OFF`, `LTRS` | `LTRS` | Hold mark, or send LTRS, while PTT is keyed and the queue is empty |

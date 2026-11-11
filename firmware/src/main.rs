@@ -2,31 +2,31 @@
 #![no_main]
 
 mod control;
+mod fault;
 mod keyer;
 mod microphone;
 
 use defmt::info;
+use defmt_rtt as _;
 use embassy_executor::Spawner;
-use embassy_futures::join::join5;
+use embassy_futures::join::join4;
 use embassy_rp::{
     binary_info::{
         EntryAddr, rp_cargo_version, rp_program_build_attribute, rp_program_description,
         rp_program_name,
     },
     bind_interrupts,
-    gpio::{Level, Output},
-    peripherals::USB,
+    peripherals::{PIO0, USB},
+    pio::{self, Pio},
     usb,
 };
-use embassy_time::Timer;
 use embassy_usb::{
     Builder, Config,
     class::cdc_acm::{CdcAcmClass, State},
 };
-use keyer::StubKeyer;
+use keyer::{FskKeyer, FskOutput};
 use microphone::{Microphone, SAMPLE_RATE_HZ, SAMPLES_PER_FRAME};
 use terminal_unit_core::{settings::Settings, tone::Sine};
-use {defmt_rtt as _, panic_probe as _};
 
 #[unsafe(link_section = ".bi_entries")]
 #[used]
@@ -38,6 +38,7 @@ pub static PICOTOOL_ENTRIES: [EntryAddr; 4] = [
 ];
 
 bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
 });
 
@@ -51,7 +52,7 @@ const TEST_TONE_AMPLITUDE: f32 = 0.5;
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     info!("jl1his-terminal-unit started");
-    let mut led = Output::new(p.PIN_25, Level::Low);
+    let fsk_output = FskOutput::new(Pio::new(p.PIO0, Irqs), p.PIN_25);
 
     let mut usb_config = Config::new(USB_VID, USB_PID);
     usb_config.product = Some("RTTY Terminal Unit");
@@ -87,21 +88,13 @@ async fn main(_spawner: Spawner) {
     };
 
     let settings = Settings::default();
-    let keyer = StubKeyer::new(settings);
+    let keyer = FskKeyer::new(settings);
 
-    let blink = async {
-        loop {
-            led.toggle();
-            Timer::after_millis(500).await;
-        }
-    };
-
-    join5(
+    join4(
         usb_device.run(),
         audio,
-        blink,
         control::run(control_port, settings, &keyer),
-        keyer.run(),
+        keyer.run(fsk_output),
     )
     .await;
 }
