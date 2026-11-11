@@ -52,7 +52,11 @@ const TEST_TONE_AMPLITUDE: f32 = 0.5;
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     info!("jl1his-terminal-unit started");
-    let fsk_output = FskOutput::new(Pio::new(p.PIO0, Irqs), p.PIN_25);
+    #[cfg(not(feature = "tiny2350"))]
+    let (fsk_pin, fsk_active_low) = (p.PIN_25, false);
+    #[cfg(feature = "tiny2350")]
+    let (fsk_pin, fsk_active_low) = (p.PIN_19, true);
+    let fsk_output = FskOutput::new(Pio::new(p.PIO0, Irqs), fsk_pin, fsk_active_low);
 
     let mut usb_config = Config::new(USB_VID, USB_PID);
     usb_config.product = Some("JL1HIS RTTY Terminal Unit");

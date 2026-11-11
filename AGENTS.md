@@ -120,6 +120,8 @@ In the workspace root:
 In `firmware/`:
 
 - `cargo build` builds the firmware. Add `--release` for an optimized build.
+  Add `--features tiny2350` to build for the Pimoroni Tiny 2350, which moves
+  the FSK output from GPIO 25 to that board's green LED.
 - `cargo run` flashes the board through the probe with
   `probe-rs run --chip RP235x` and prints the defmt log over RTT.
 - `cargo clippy -- -D warnings` checks the firmware.

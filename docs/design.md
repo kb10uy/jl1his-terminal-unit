@@ -34,7 +34,17 @@ On-board demodulation on the RP2350 is a later goal.
   does not define `PICO_DEFAULT_LED_PIN_INVERTED`. For now it is the output
   pin of the FSK keyer, so it is lit whenever the FSK optocoupler would be
   on. There is no heartbeat blink. `main.rs` hands the pin to
-  `FskOutput::new`, and that argument is the only place that names it.
+  `FskOutput::new`, and that is the only place that names it.
+- Tiny 2350: the Cargo feature `tiny2350` of the firmware moves the FSK
+  output to the green element of that board's RGB LED on GPIO 19. Its LED
+  is on GPIO 18 to 20 and active low (Pimoroni product page,
+  `shop.pimoroni.com/products/tiny-2350`; pico-sdk
+  `src/boards/include/boards/pimoroni_tiny2350.h` names the pins and makes
+  green the default LED). `FskOutput::new` therefore takes the polarity of
+  the pin and inverts the pad output (`Pin::set_output_inversion`,
+  `embassy-rp` 0.10.0 `src/pio/mod.rs`), so the state machine and the fault
+  handlers stay the same and the LED is still lit when the optocoupler would
+  be on. The feature changes nothing else.
 - Chip stepping: not known until the Pico 2 is at hand. The Tiny 2350 is
   marked RP2350A0A2, stepping A2, which erratum RP2350-E9 affects. The design
   keeps the E9 workarounds either way.

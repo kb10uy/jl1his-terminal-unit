@@ -68,7 +68,7 @@ pub struct FskOutput<'d> {
 }
 
 impl<'d> FskOutput<'d> {
-    pub fn new(pio: Pio<'d, PIO0>, pin: Peri<'d, impl PioPin>) -> Self {
+    pub fn new(pio: Pio<'d, PIO0>, pin: Peri<'d, impl PioPin>, active_low: bool) -> Self {
         let Pio {
             mut common,
             irq_flags,
@@ -91,7 +91,8 @@ impl<'d> FskOutput<'d> {
             ".wrap",
         );
         let program = common.load_program(&program.program);
-        let pin = common.make_pio_pin(pin);
+        let mut pin = common.make_pio_pin(pin);
+        pin.set_output_inversion(active_low);
         sm0.set_pins(Level::Low, &[&pin]);
         sm0.set_pin_dirs(Direction::Out, &[&pin]);
 
