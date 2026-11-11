@@ -2,15 +2,16 @@
 
 ## Overview
 
-jl1his-terminal-unit is an RTTY terminal unit built on the RP2350 (Pimoroni
-Tiny 2350), with firmware written in Rust with embassy. The PC sees it as a
+jl1his-terminal-unit is an RTTY terminal unit built on the RP2350 (Raspberry
+Pi Pico 2), with firmware written in Rust with embassy. The PC sees it as a
 composite USB device: a USB Audio microphone that carries the rig's receive
 AF, and a CDC ACM port that takes text commands to key FSK and PTT and to
 change settings.
 
 The design is recorded in `docs/design.md`. Read it before starting work.
 
-The firmware blinks the on-board LED and presents a UAC microphone that
+The firmware was brought up on a Pimoroni Tiny 2350 and is not ported to the
+Pico 2 yet. It blinks the Tiny 2350's LED and presents a UAC microphone that
 streams a 1 kHz test tone. Next come stage 1, the control port and PIO-based
 FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
 
@@ -34,10 +35,13 @@ FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
 - A command that ends a transmission releases PTT only after the queued text
   has been sent in full. What an abort or a closed port does is listed under
   "Undecided" in `docs/design.md`.
-- The chip is stepping A2 and affected by erratum RP2350-E9. Do not rely on
-  internal pull-downs: inputs use pull-ups and are pulled to GND, and a pin
-  that must stay Low uses an external resistor of 8.2 kΩ or less. Disable the
-  digital input on pins used by the ADC.
+- Treat the chip as affected by erratum RP2350-E9. The Tiny 2350 used so far
+  is stepping A2, and the stepping of the Pico 2 is not known yet. Do not
+  rely on internal pull-downs: inputs use pull-ups and are pulled to GND, and
+  a pin that must stay Low uses an external resistor of 8.2 kΩ or less.
+  Disable the digital input on pins used by the ADC.
+- On the Pico 2, GPIO 23, 24, 25 and 29 serve the board itself (regulator
+  mode, VBUS sense, LED, VSYS measurement) and are not on the headers.
 - Change the USB PID whenever the descriptor configuration changes. Windows
   caches the old configuration. Until pid.codes allocates a PID, move to the
   next of the test PIDs 1209:0001–0010.
@@ -92,11 +96,12 @@ FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
 `rust-toolchain.toml` selects the stable toolchain and installs the
 `thumbv8m.main-none-eabihf` target.
 
-The Tiny 2350 does not expose SWD, so there is no debug probe and no RTT log.
-The firmware is flashed over USB with `picotool`, whose prebuilt binaries are
-published in the `raspberrypi/pico-sdk-tools` releases. Put the board into
-BOOTSEL mode before flashing. The on-board green LED blinking once a second
-shows that the firmware is running.
+No debug probe is set up, so there is no RTT log, although the Pico 2 exposes
+SWD on a 3-pin header. The firmware is flashed over USB with `picotool`,
+whose prebuilt binaries are published in the `raspberrypi/pico-sdk-tools`
+releases. Put the board into BOOTSEL mode before flashing. On the Tiny 2350
+the on-board green LED blinking once a second shows that the firmware is
+running; the firmware does not drive the Pico 2's LED on GPIO 25 yet.
 
 The target and the runner are set in `firmware/.cargo/config.toml`, which
 Cargo reads only when it is run inside `firmware/`. The firmware does not

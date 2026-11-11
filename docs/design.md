@@ -23,16 +23,36 @@ On-board demodulation on the RP2350 is a later goal.
 
 ### Hardware
 
-- Board: Pimoroni Tiny 2350
-- Chip marking: RP2350A0A2 (stepping A2, affected by erratum RP2350-E9)
-- Debug: the board does not expose SWD (checked on the board). Firmware is
-  flashed over USB in BOOTSEL mode with `picotool`, and there is no RTT log.
-  Logs and status go out through the control port once it exists.
-- On-board parts: an RGB LED on GPIO 18 (R), 19 (G) and 20 (B), and a user
-  switch on GPIO 23 (pico-sdk `src/boards/include/boards/pimoroni_tiny2350.h`).
-  The LED is active low: Pimoroni's `RGBLED` driver defaults to
-  `Polarity::ACTIVE_LOW` (pimoroni-pico `drivers/rgbled/rgbled.hpp`) and their
-  Tiny 2350 example uses that default.
+- Board: Raspberry Pi Pico 2, an RP2350A with 4 MB of flash. Unless another
+  source is given, the board facts in this document come from the Pico 2
+  datasheet (RP-008299-DS-3, release of 2026-07-03),
+  `pip-assets.raspberrypi.com/categories/1005-raspberry-pi-pico-2/documents/RP-008299-DS-3-pico-2-datasheet.pdf`.
+- The firmware so far was brought up on a Pimoroni Tiny 2350 and is not
+  ported yet. It still blinks that board's green LED on GPIO 19, which is
+  active low; the Tiny 2350 has an RGB LED on GPIO 18, 19 and 20 (pico-sdk
+  `src/boards/include/boards/pimoroni_tiny2350.h`, pimoroni-pico
+  `drivers/rgbled/rgbled.hpp`).
+- Chip stepping: not known until the Pico 2 is at hand. The Tiny 2350 is
+  marked RP2350A0A2, stepping A2, which erratum RP2350-E9 affects. The design
+  keeps the E9 workarounds either way.
+- Debug: the Pico 2 brings SWD out on a 3-pin debug header (section 5.8), so
+  a debug probe and an RTT log become possible. None is set up yet: firmware
+  is flashed over USB in BOOTSEL mode with `picotool`. Logs and status go
+  out through the control port once it exists.
+- Pins: the headers expose 26 GPIOs, three of them ADC inputs. GPIO 23
+  drives the regulator's power-save pin, GPIO 24 senses VBUS, GPIO 25
+  drives the user LED and GPIO 29 measures VSYS / 3 (section 3.1).
+- Power: 3V3 comes from an RT6150 buck-boost switching regulator. The
+  datasheet recommends keeping external loads on the 3V3 pin under 300 mA.
+  With GPIO 23 low, the default, the regulator runs in PFM mode; driving it
+  high forces PWM mode, which the datasheet says greatly reduces the ripple
+  at light load (sections 5.3 and 5.4).
+- ADC supply and reference: ADC_AVDD is the 3V3 rail through 201 Ω into
+  2.2 µF and is brought out as ADC_VREF. AGND is the ground reference of
+  GPIO 26–29. The datasheet names the weak points: the accuracy of the
+  regulator, the limited filtering, and an offset of about 30 mV from the
+  ADC's own current. An external 3.0 V shunt reference on ADC_VREF is the
+  suggested improvement (section 5.3).
 - Audio input: the internal ADC, driven by an op-amp front end built on the
   MCP6022, behind an isolation transformer.
 - Target rigs: the Yaesu FTDX10 first. The design also works with the ACC
@@ -126,8 +146,9 @@ with its kind. The format is part of the command set.
   through DMA. No software timer triggers conversions.
 - The ADC clock is 48 MHz. Both 48 kHz (÷1000) and 192 kHz (÷250) are
   integer divisions.
-- Oversample at 192 kHz or more and decimate to 48 kHz. A first-order RC is
-  expected to be enough for anti-aliasing.
+- Oversample at 192 kHz or more and low-pass filter before decimating to
+  48 kHz. The analog RC alone does not provide enough rejection for direct
+  48 kHz capture. See `circuit-review.md` for the calculated response.
 - The UAC capture endpoint is asynchronous and sends samples on the device's
   clock.
 - Samples pass through an interface boundary inside the firmware, so that an
@@ -168,13 +189,13 @@ of the ADC.
 
 The schematic is `hardware/terminal-unit.kicad_sch`, drawn with KiCad 10. Its
 component values are starting points for the prototype, not decisions. The
-Tiny 2350 is not on the sheet yet, so the GPIO and ADC connections end in
+Pico 2 is not on the sheet yet, so the GPIO and ADC connections end in
 global labels.
 
 ### Receive AF Input Stage
 
-1. Isolation transformer (10 kΩ : 10 kΩ)
-2. AC coupling
+1. AC coupling on the rig side (C1)
+2. Isolation transformer (10 kΩ : 10 kΩ), with one secondary end at VBIAS
 3. Non-inverting amplifier with trimmer-set gain (3.3 V single supply,
    rail-to-rail, 1.65 V bias)
 4. RC anti-aliasing LPF (a few kHz to 10 kHz)
@@ -186,13 +207,16 @@ global labels.
   ground and 20 mV of the supply into 10 kΩ, draws 1 mA per amplifier and has
   an input bias current of 1 pA. It comes in 8-lead PDIP, SOIC and TSSOP
   (Microchip DS20001685E, front page and section 1.0).
-- Input impedance around 100 kΩ, so the difference in rig output impedance
-  (4.7 k to 10 kΩ) can be ignored.
+- The schematic currently loads the transformer secondary with R4 = 10 kΩ.
+  This is a provisional value; the choice between 10 kΩ and around 100 kΩ
+  remains undecided. At 10 kΩ, the rig's output impedance cannot be ignored.
 - A trimmer in the feedback path sets the gain between 3 and 23, so the level
-  is adjusted once per rig without changing parts. A gain of 3 covers both
-  the FTDX10 and Icom rigs, but with the FTDX10 it only reaches about
-  −11 dBFS; 8–10× makes better use of the ADC's effective resolution, and
-  twice that if the transformer is loaded with 10 kΩ.
+  is adjusted once per rig without changing parts. This is the midband AC
+  gain; R11 and C7 make the DC gain unity. Using the unverified FTDX10
+  assumptions below and R4 = 10 kΩ, a gain around 16–17 gives about
+  2.4 Vp-p at the ADC, allowing for the transformer's winding resistance
+  but not its magnetizing inductance or leakage. Measure the actual level
+  before choosing the gain. See `circuit-review.md`.
 - Overvoltage protection: a series resistor, then two BAT43 Schottky diodes
   in DO-35 that clamp the op-amp input to the supply rails. The BAT43
   withstands 30 V, leaks at most 0.5 µA at 25 V, drops 0.26 V to 0.33 V at
@@ -212,18 +236,32 @@ global labels.
   `akizukidenshi.com/goodsaffix/st.pdf`). Which of the two cases to use is not
   chosen yet.
 
-### Rig-Side Assumptions (all unverified)
+### Rig-Side Specifications and Assumptions
 
 | Rig | Connector | Output impedance | Level |
 |---|---|---|---|
-| FTDX10 | DATA OUT on RTTY/DATA (6-pin mini-DIN) | 10 kΩ | up to about 300 mVp-p (fixed) |
-| Icom | AF output on ACC | 4.7 kΩ | 100–300 mV rms |
+| FTDX10 | DATA OUT on RTTY/DATA (6-pin mini-DIN) | 10 kΩ (unverified) | up to about 300 mVp-p (unverified) |
+| Icom IC-7300 | AF/IF output on ACC, pin 12, selected as AF | 4.7 kΩ | 100–300 mV rms, adjustable |
+
+- The FTDX10 Operation Manual (2307A-LS-1), p. 64, confirms the connector
+  mapping. Its p. 91 documents DATA OUT LEVEL adjustment, so "fixed level"
+  must not be interpreted as independent of menu settings. The numerical AF
+  specifications and FSK / PTT electrical limits above remain unverified.
+  Source: [Yaesu manual](https://yaesu.com/Files/4CB893D7-1018-01AF-FA97E9E9AD48B50C/FTDX10_OM_ENG_EH076H202_2307A-LS-1.pdf).
+- The IC-7300 Basic Manual, pp. 12-1–12-2, specifies the AF values above
+  and approximately 200 mV rms at the default 50% output-level setting.
+  These specifications are for the IC-7300, not all Icom rigs.
+  Source: [Icom manual](https://www.icomeurope.com/wp-content/uploads/2019/07/IC-7300_ENG_Basic_6.pdf).
 
 ### FSK / PTT Outputs
 
 - Isolated by optocoupler open-collector outputs. Both rigs are assumed to
-  take an input pulled up on the rig side that activates when pulled to GND
-  (unverified).
+  take an input pulled up on the rig side that activates when pulled to GND.
+  This is confirmed for the IC-7300 SEND input; its FSKK input specifies
+  Low below 0.6 V and current below 2 mA. SEND lists a TX input range of
+  −0.5 V to +0.8 V and maximum current flow of 20 mA. Check actual sink
+  current for each rig rather than using the FSK figure for PTT. The FTDX10
+  electrical specifications remain unverified (Icom manual, p. 12-1).
 - Each output is a Toshiba TLP785 of rank GB, a phototransistor coupler in
   DIP4. Rank GB has a current transfer ratio of 100 % to 600 % at
   IF = 5 mA and VCE = 5 V. The saturation voltage is at most 0.4 V at
@@ -233,9 +271,27 @@ global labels.
   50 µs, typically (Toshiba TLP785 datasheet, 2012-02-20). A coupler with a
   logic output would be faster but needs a supply on the rig side, which the
   rig's jack does not provide.
+- Each LED runs from 3V3 through 150 Ω (R6 / R7), and a 2SC1815 (Q1 / Q2)
+  switches its cathode to ground. The LED current is about 14 mA nominally.
+  With the supply 5 % low, VF = 1.3 V, VCE(sat) = 0.25 V and the resistor
+  1 % high it is about 10.5 mA, above the 8 mA at which the TLP785 is
+  specified to hold 0.4 V at 2.4 mA. This is an estimate rather than a
+  guarantee: the VF limit is specified at 10 mA and the 2SC1815 saturation
+  limit at IC = 100 mA and IB = 10 mA. A rig input that sources more than
+  2.4 mA needs its own budget, so the sink current of each rig is still to
+  be measured. The 2SC1815 is rated 50 V and 150 mA, with hFE from 70 to 700
+  at 2 mA and VCE(sat) at most 0.25 V (2SC1815 datasheet, Lumimax,
+  2024-04-26 Rev 1.3).
+- The GPIO drives the base through 4.7 kΩ (R12 / R13). The base current is
+  about 0.55 mA at 3.3 V and 0.41 mA at the GPIO's 2.62 V floor, a forced
+  gain of 25 to 33 against the minimum hFE of 70. With the pull-down the
+  GPIO supplies about 2 mA. Both outputs keyed draw about 27 mA from 3V3.
 - So that nothing transmits right after power-up or while pins are
-  undefined, the optocoupler drive circuit is off whenever its pin is
-  undefined.
+  undefined, R8 / R9 pull each GPIO to ground through 2.2 kΩ, which holds
+  the transistor and so the LED off. 2.2 kΩ is well under the 8.2 kΩ limit
+  of the E9 workaround.
+- KiCad's 2SC1815 symbol numbers the pins emitter, collector, base. Check
+  the pin order of the purchased part against its own datasheet.
 
 ### Connector
 
@@ -252,9 +308,8 @@ global labels.
 | 5 | AF input | DATA OUT |
 | 6 | Not connected | SQL OUT |
 
-- The FTDX10 column comes from the page "RTTY (FSK) Operation" of the FTDX10
-  Operation Manual as transcribed by ManualsLib. Confirm it against the
-  manual itself under item 8 of "To Check Before Implementing".
+- The FTDX10 column is confirmed against the official FTDX10 Operation
+  Manual (2307A-LS-1), p. 64; see the link under rig-side specifications.
 - Pin 2 is the return for the AF and for the keying current alike.
 - The shell of the jack and the shield of the cable connect to the rig's
   ground only. Joining them to the USB ground or the USB shield, directly or
@@ -271,13 +326,20 @@ global labels.
 
 ## 6. Expected Accuracy of the Internal ADC
 
-- Recalled as a little over 9 effective bits (SNR about 56 dB) against the
-  nominal 12 bits (unverified).
+- The RP2350 datasheet, Table 1438, specifies 9 bits minimum and 9.5 bits
+  typical ENOB against nominal 12-bit resolution. The overview in section
+  12.4 instead says 9.2 ENOB; the table is used here. These are chip
+  specifications, not a measurement of this assembly.
+  Source: [RP2350 datasheet](https://pip-assets.raspberrypi.com/categories/1214-rp2350/documents/RP-008373-DS-2-rp2350-datasheet.pdf).
 - Enough for RTTY, given the in-band dynamic range of the rig's AF,
   oversampling and the processing gain of narrow demodulation filters.
 - What remains is distortion from nonlinearity, and spurs from the 1 kHz USB
   frame period, core supply switching and coupling from digital circuits.
   These may show as lines in the PC's waterfall.
+- On the Pico 2 the 3V3 rail, and with it the ADC reference and the op-amp
+  supply, carries the ripple of a switching regulator. Measure with GPIO 23
+  low and high, and decide from the result whether to hold it high, filter
+  the op-amp supply or fit an external reference.
 - Evaluation: once USB Audio works, record on the PC and look at an FFT.
   Measure the noise floor and spurs with no signal, and SINAD with a sine
   wave near full scale.
@@ -310,16 +372,34 @@ version and source location, datasheet section, manual page) under it.
 - [ ] 5. How `CdcAcmClass` in `embassy-usb` reports DTR changes and
   SEND_BREAK, to tell when the PC has closed the port and to offer an abort
   that does not travel through the bulk pipe.
-- [ ] 6. The Tiny 2350 schematic: exposed GPIOs, and filtering of the ADC's
-  analog supply and reference.
-- [ ] 7. The effective resolution of the ADC in the RP2350 datasheet.
+- [x] 6. The board's exposed GPIOs, and filtering of the ADC's analog supply
+  and reference.
+  - Pico 2: 26 GPIOs on the headers, three of them ADC inputs; ADC_AVDD is
+    3V3 through 201 Ω into 2.2 µF, brought out as ADC_VREF, with AGND as a
+    separate pin. See "Hardware" in section 2 for the details and source.
+  - Tiny 2350, the board used before: the PIM721 schematic dated 2024-08-29
+    exposes GP0–GP7 and GP26–GP29 / ADC0–ADC3 on the headers, and GP12 /
+    GP13 on Qw/ST. ADC_IOVDD is connected directly to the common 3V3 rail
+    with 100 nF decoupling (C12); there is no separate ADC supply filter or
+    exposed reference input. The R12 / C32 filter serves VREG_AVDD, not the
+    ADC.
+    Source: [Pimoroni schematic](https://cdn.shopify.com/s/files/1/0174/1800/files/Pimoroni_Tiny_2350_Schematic.pdf?v=1724926880).
+- [x] 7. The effective resolution of the ADC in the RP2350 datasheet.
+  - Table 1438: 9 bits minimum, 9.5 bits typical. See section 6 above for
+    the source and the different value in the datasheet overview.
 - [ ] 8. The manuals of the FTDX10 and each Icom model: AF output level and
   impedance, FSK / PTT input specification and polarity, pinout.
+  - Partially checked: official FTDX10 connector mapping and DATA OUT LEVEL
+    adjustment, and IC-7300 ACC specifications, are recorded in section 4.
+    FTDX10 numerical AF and keying specifications and other Icom models
+    still need checking.
 
 ## 8. Undecided
 
-- The pin assignment. The Tiny 2350 exposes few GPIOs. Decide whether to keep
-  3–4 pins free for I2S in addition to FSK, PTT and the ADC input.
+- The pin assignment: FSK, PTT, the ADC input, and pins kept for I2S. The
+  Pico 2 exposes enough GPIOs for all of them.
+- Whether to hold GPIO 23 high for PWM mode, filter the op-amp supply or fit
+  an external ADC reference. Decide after measuring the ADC noise.
 - The load on the transformer secondary. 10 kΩ matches the transformer but
   halves the level from a 10 kΩ rig output; around 100 kΩ keeps the level but
   may peak at the high end. Measure both on the prototype.
