@@ -1,9 +1,5 @@
 use crate::settings::{Settings, StopBits};
 
-pub const fn drive(mark: bool, invert: bool) -> bool {
-    mark == invert
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Framing {
     half_bit_ticks: u32,
@@ -61,6 +57,10 @@ impl Framing {
             !marks & ((1 << self.half_bits()) - 1)
         }
     }
+}
+
+pub const fn drive(mark: bool, invert: bool) -> bool {
+    mark == invert
 }
 
 #[cfg(test)]

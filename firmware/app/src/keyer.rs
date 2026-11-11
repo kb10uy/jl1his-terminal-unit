@@ -29,87 +29,6 @@ pub struct FskKeyer {
     aborted: Signal<NoopRawMutex, ()>,
 }
 
-struct State {
-    settings: Settings,
-    queue: Deque<u8, QUEUE_WORDS>,
-    ptt_requested: bool,
-    keyed_at: Option<Instant>,
-    tail: bool,
-    shift_lost: bool,
-}
-
-enum Step {
-    Idle,
-    Send(Settings, u8),
-    Hold(bool, Wait),
-}
-
-enum Wait {
-    For(Duration),
-    Wake(Option<Duration>),
-}
-
-impl State {
-    fn abort(&mut self) {
-        self.queue.clear();
-        self.ptt_requested = false;
-        self.tail = false;
-        self.shift_lost = true;
-        if self.keyed_at.take().is_some() {
-            info!("keyer: PTT off (abort)");
-        }
-    }
-
-    fn step(&mut self, now: Instant) -> Step {
-        let mark = drive(true, self.settings.invert);
-        let Some(keyed_at) = self.keyed_at else {
-            if !self.ptt_requested {
-                return Step::Idle;
-            }
-            self.keyed_at = Some(now);
-            info!("keyer: PTT on");
-            let delay = Duration::from_millis(self.settings.tx_delay_ms.into());
-            return Step::Hold(mark, Wait::For(delay));
-        };
-        let remaining = match self.settings.tot_s {
-            Some(tot) => {
-                let limit = Duration::from_secs(tot.get().into());
-                let elapsed = now - keyed_at;
-                if elapsed >= limit {
-                    warn!("keyer: TOT expired");
-                    self.abort();
-                    return Step::Idle;
-                }
-                Some(limit - elapsed)
-            }
-            None => None,
-        };
-        if let Some(word) = self.queue.pop_front() {
-            self.tail = false;
-            debug!("keyer: FSK {=u8:#x}", word);
-            return Step::Send(self.settings, word);
-        }
-        if self.ptt_requested {
-            self.tail = false;
-            if self.settings.diddle == Diddle::Ltrs && self.settings.bits == 5 {
-                self.shift_lost = true;
-                return Step::Send(self.settings, LTRS);
-            }
-            return Step::Hold(mark, Wait::Wake(remaining));
-        }
-        if !self.tail {
-            self.tail = true;
-            let tail = Duration::from_millis(self.settings.tx_tail_ms.into());
-            return Step::Hold(mark, Wait::For(tail));
-        }
-        self.tail = false;
-        self.keyed_at = None;
-        self.shift_lost = true;
-        info!("keyer: PTT off");
-        Step::Idle
-    }
-}
-
 impl FskKeyer {
     pub const fn new(settings: Settings) -> Self {
         Self {
@@ -220,5 +139,86 @@ impl Keyer for &FskKeyer {
             queued: state.queue.len(),
             free: state.queue.capacity() - state.queue.len(),
         })
+    }
+}
+
+enum Step {
+    Idle,
+    Send(Settings, u8),
+    Hold(bool, Wait),
+}
+
+enum Wait {
+    For(Duration),
+    Wake(Option<Duration>),
+}
+
+struct State {
+    settings: Settings,
+    queue: Deque<u8, QUEUE_WORDS>,
+    ptt_requested: bool,
+    keyed_at: Option<Instant>,
+    tail: bool,
+    shift_lost: bool,
+}
+
+impl State {
+    fn abort(&mut self) {
+        self.queue.clear();
+        self.ptt_requested = false;
+        self.tail = false;
+        self.shift_lost = true;
+        if self.keyed_at.take().is_some() {
+            info!("keyer: PTT off (abort)");
+        }
+    }
+
+    fn step(&mut self, now: Instant) -> Step {
+        let mark = drive(true, self.settings.invert);
+        let Some(keyed_at) = self.keyed_at else {
+            if !self.ptt_requested {
+                return Step::Idle;
+            }
+            self.keyed_at = Some(now);
+            info!("keyer: PTT on");
+            let delay = Duration::from_millis(self.settings.tx_delay_ms.into());
+            return Step::Hold(mark, Wait::For(delay));
+        };
+        let remaining = match self.settings.tot_s {
+            Some(tot) => {
+                let limit = Duration::from_secs(tot.get().into());
+                let elapsed = now - keyed_at;
+                if elapsed >= limit {
+                    warn!("keyer: TOT expired");
+                    self.abort();
+                    return Step::Idle;
+                }
+                Some(limit - elapsed)
+            }
+            None => None,
+        };
+        if let Some(word) = self.queue.pop_front() {
+            self.tail = false;
+            debug!("keyer: FSK {=u8:#x}", word);
+            return Step::Send(self.settings, word);
+        }
+        if self.ptt_requested {
+            self.tail = false;
+            if self.settings.diddle == Diddle::Ltrs && self.settings.bits == 5 {
+                self.shift_lost = true;
+                return Step::Send(self.settings, LTRS);
+            }
+            return Step::Hold(mark, Wait::Wake(remaining));
+        }
+        if !self.tail {
+            self.tail = true;
+            let tail = Duration::from_millis(self.settings.tx_tail_ms.into());
+            return Step::Hold(mark, Wait::For(tail));
+        }
+        self.tail = false;
+        self.keyed_at = None;
+        self.shift_lost = true;
+        info!("keyer: PTT off");
+        Step::Idle
     }
 }

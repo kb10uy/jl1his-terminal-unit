@@ -29,17 +29,6 @@ impl Iterator for Unescape<'_> {
     }
 }
 
-fn hex_digit(digit: u8) -> Result<u8, Error> {
-    char::from(digit)
-        .to_digit(16)
-        .map(|value| value as u8)
-        .ok_or(Error::BadArgument)
-}
-
-fn switch(on: bool) -> &'static str {
-    if on { "ON" } else { "OFF" }
-}
-
 pub(super) struct Executor<const WORDS: usize> {
     pub(super) settings: Settings,
     version: &'static str,
@@ -218,4 +207,15 @@ impl<const WORDS: usize> Executor<WORDS> {
         }
         Ok(())
     }
+}
+
+fn hex_digit(digit: u8) -> Result<u8, Error> {
+    char::from(digit)
+        .to_digit(16)
+        .map(|value| value as u8)
+        .ok_or(Error::BadArgument)
+}
+
+fn switch(on: bool) -> &'static str {
+    if on { "ON" } else { "OFF" }
 }

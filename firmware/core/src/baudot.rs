@@ -13,6 +13,18 @@ const LETTERS: [u8; 26] = [
 const DIGITS: [u8; 10] = [0x16, 0x17, 0x13, 0x01, 0x0A, 0x10, 0x15, 0x07, 0x06, 0x18];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EncodeError {
+    Unencodable,
+    Full,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Code {
+    Ita2,
+    Us,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shift {
     Letters,
     Figures,
@@ -25,53 +37,6 @@ impl Shift {
             Shift::Figures => FIGS,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Code {
-    Ita2,
-    Us,
-}
-
-fn figure(code: Code, ch: u8) -> Option<u8> {
-    let word = match (ch, code) {
-        (b'-', _) => 0x03,
-        (b'?', _) => 0x19,
-        (b':', _) => 0x0E,
-        (b'(', _) => 0x0F,
-        (b')', _) => 0x12,
-        (b'.', _) => 0x1C,
-        (b',', _) => 0x0C,
-        (b'/', _) => 0x1D,
-        (b'\'', Code::Ita2) | (ASCII_BEL, Code::Us) => 0x05,
-        (ASCII_BEL, Code::Ita2) | (b'\'', Code::Us) => 0x0B,
-        (b'+', Code::Ita2) | (b'"', Code::Us) => 0x11,
-        (b'=', Code::Ita2) | (b';', Code::Us) => 0x1E,
-        (b'$', Code::Us) => 0x09,
-        (b'!', Code::Us) => 0x0D,
-        (b'#', Code::Us) => 0x14,
-        (b'&', Code::Us) => 0x1A,
-        _ => return None,
-    };
-    Some(word)
-}
-
-fn lookup(code: Code, ch: u8) -> Option<(u8, Option<Shift>)> {
-    let entry = match ch {
-        b'A'..=b'Z' => (LETTERS[usize::from(ch - b'A')], Some(Shift::Letters)),
-        b'0'..=b'9' => (DIGITS[usize::from(ch - b'0')], Some(Shift::Figures)),
-        b' ' => (SPACE, None),
-        b'\r' => (CR, None),
-        b'\n' => (LF, None),
-        _ => (figure(code, ch)?, Some(Shift::Figures)),
-    };
-    Some(entry)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EncodeError {
-    Unencodable,
-    Full,
 }
 
 pub struct Words<'a> {
@@ -142,6 +107,41 @@ impl Encoder {
         }
         Ok(())
     }
+}
+
+fn lookup(code: Code, ch: u8) -> Option<(u8, Option<Shift>)> {
+    let entry = match ch {
+        b'A'..=b'Z' => (LETTERS[usize::from(ch - b'A')], Some(Shift::Letters)),
+        b'0'..=b'9' => (DIGITS[usize::from(ch - b'0')], Some(Shift::Figures)),
+        b' ' => (SPACE, None),
+        b'\r' => (CR, None),
+        b'\n' => (LF, None),
+        _ => (figure(code, ch)?, Some(Shift::Figures)),
+    };
+    Some(entry)
+}
+
+fn figure(code: Code, ch: u8) -> Option<u8> {
+    let word = match (ch, code) {
+        (b'-', _) => 0x03,
+        (b'?', _) => 0x19,
+        (b':', _) => 0x0E,
+        (b'(', _) => 0x0F,
+        (b')', _) => 0x12,
+        (b'.', _) => 0x1C,
+        (b',', _) => 0x0C,
+        (b'/', _) => 0x1D,
+        (b'\'', Code::Ita2) | (ASCII_BEL, Code::Us) => 0x05,
+        (ASCII_BEL, Code::Ita2) | (b'\'', Code::Us) => 0x0B,
+        (b'+', Code::Ita2) | (b'"', Code::Us) => 0x11,
+        (b'=', Code::Ita2) | (b';', Code::Us) => 0x1E,
+        (b'$', Code::Us) => 0x09,
+        (b'!', Code::Us) => 0x0D,
+        (b'#', Code::Us) => 0x14,
+        (b'&', Code::Us) => 0x1A,
+        _ => return None,
+    };
+    Some(word)
 }
 
 #[cfg(test)]

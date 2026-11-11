@@ -1,5 +1,12 @@
 use crate::settings::Setting;
 
+pub const NAMES: [&str; 13] = [
+    "TX", "SEND", "PTT", "KEY", "ABORT", "SET", "GET", "STATUS", "SAVE", "DEFAULTS", "VER",
+    "BOOTSEL", "HELP",
+];
+
+const MAX_NAME_LEN: usize = 8;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command<'a> {
     Tx(&'a [u8]),
@@ -23,13 +30,6 @@ pub enum ParseError {
     BadArgument,
     UnknownSetting,
 }
-
-pub const NAMES: [&str; 13] = [
-    "TX", "SEND", "PTT", "KEY", "ABORT", "SET", "GET", "STATUS", "SAVE", "DEFAULTS", "VER",
-    "BOOTSEL", "HELP",
-];
-
-const MAX_NAME_LEN: usize = 8;
 
 pub fn parse(line: &[u8]) -> Result<Command<'_>, ParseError> {
     let (name, rest) = match line.iter().position(|&b| b == b' ') {

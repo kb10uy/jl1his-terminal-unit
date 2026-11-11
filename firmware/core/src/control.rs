@@ -18,6 +18,23 @@ const SUB: u8 = 0x1A;
 const DEL: u8 = 0x7F;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    Bootsel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    Command,
+    Keyboard,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QueueFull;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SaveError(pub &'static str);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxStatus {
     pub ptt: bool,
     pub queued: usize,
@@ -30,12 +47,6 @@ impl TxStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct QueueFull;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SaveError(pub &'static str);
-
 pub trait Keyer {
     fn apply(&mut self, settings: &Settings);
     fn enqueue(&mut self, words: &[u8], resync: Option<u8>) -> Result<(), QueueFull>;
@@ -47,21 +58,6 @@ pub trait Keyer {
 
 pub trait Storage {
     fn save(&mut self, settings: &Settings) -> Result<(), SaveError>;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Action {
-    Bootsel,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mode {
-    Command,
-    Keyboard,
-}
-
-fn ok(out: &mut impl Write) {
-    let _ = out.write_str("OK\r\n");
 }
 
 pub struct Controller<const LINE: usize, const WORDS: usize> {
@@ -127,4 +123,8 @@ impl<const LINE: usize, const WORDS: usize> Controller<LINE, WORDS> {
             None
         })
     }
+}
+
+fn ok(out: &mut impl Write) {
+    let _ = out.write_str("OK\r\n");
 }

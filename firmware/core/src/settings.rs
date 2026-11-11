@@ -1,6 +1,14 @@
 use crate::baudot::Code;
 use core::{fmt, num::NonZeroU16};
 
+const STOP_BITS: [(&str, StopBits); 3] = [
+    ("1", StopBits::One),
+    ("1.5", StopBits::OneAndHalf),
+    ("2", StopBits::Two),
+];
+const DIDDLES: [(&str, Diddle); 2] = [("OFF", Diddle::Off), ("LTRS", Diddle::Ltrs)];
+const CODES: [(&str, Code); 2] = [("ITA2", Code::Ita2), ("US", Code::Us)];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Baud(u32);
 
@@ -179,14 +187,6 @@ fn parse_keyword<T: Copy>(text: &[u8], keywords: &[(&str, T)]) -> Option<T> {
         .find(|(keyword, _)| text.eq_ignore_ascii_case(keyword.as_bytes()))
         .map(|&(_, value)| value)
 }
-
-const STOP_BITS: [(&str, StopBits); 3] = [
-    ("1", StopBits::One),
-    ("1.5", StopBits::OneAndHalf),
-    ("2", StopBits::Two),
-];
-const DIDDLES: [(&str, Diddle); 2] = [("OFF", Diddle::Off), ("LTRS", Diddle::Ltrs)];
-const CODES: [(&str, Code); 2] = [("ITA2", Code::Ita2), ("US", Code::Us)];
 
 fn keyword<T: PartialEq>(value: T, keywords: &[(&'static str, T)]) -> &'static str {
     keywords

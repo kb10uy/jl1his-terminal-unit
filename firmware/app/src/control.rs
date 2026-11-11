@@ -27,39 +27,6 @@ impl Storage for NoStorage {
     }
 }
 
-struct Reply {
-    buf: [u8; REPLY_BYTES],
-    len: usize,
-    overflowed: bool,
-}
-
-impl Reply {
-    const fn new() -> Self {
-        Self {
-            buf: [0; REPLY_BYTES],
-            len: 0,
-            overflowed: false,
-        }
-    }
-
-    fn line(&self) -> Option<&[u8]> {
-        (!self.overflowed && self.len > 0).then(|| &self.buf[..self.len])
-    }
-}
-
-impl fmt::Write for Reply {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        let end = self.len + s.len();
-        let Some(dest) = self.buf.get_mut(self.len..end) else {
-            self.overflowed = true;
-            return Err(fmt::Error);
-        };
-        dest.copy_from_slice(s.as_bytes());
-        self.len = end;
-        Ok(())
-    }
-}
-
 pub async fn run<'d, D: Driver<'d>>(
     class: CdcAcmClass<'d, D>,
     settings: Settings,
@@ -118,4 +85,37 @@ async fn reboot_to_bootsel(output: &Output) {
     let _ = with_timeout(Duration::from_millis(500), drained).await;
     Timer::after_millis(50).await;
     reset_to_usb_boot(0, 0);
+}
+
+struct Reply {
+    buf: [u8; REPLY_BYTES],
+    len: usize,
+    overflowed: bool,
+}
+
+impl Reply {
+    const fn new() -> Self {
+        Self {
+            buf: [0; REPLY_BYTES],
+            len: 0,
+            overflowed: false,
+        }
+    }
+
+    fn line(&self) -> Option<&[u8]> {
+        (!self.overflowed && self.len > 0).then(|| &self.buf[..self.len])
+    }
+}
+
+impl fmt::Write for Reply {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let end = self.len + s.len();
+        let Some(dest) = self.buf.get_mut(self.len..end) else {
+            self.overflowed = true;
+            return Err(fmt::Error);
+        };
+        dest.copy_from_slice(s.as_bytes());
+        self.len = end;
+        Ok(())
+    }
 }
