@@ -20,10 +20,10 @@ then the ADC path behind the microphone and on-board demodulation.
 
 ## Architecture
 
-- The repository is a Cargo workspace of two crates. `core/`
+- `firmware/` is a Cargo workspace of two crates. `firmware/core/`
   (`terminal-unit-core`) is a `no_std` library free of platform dependencies,
-  for logic that is tested on the host. `firmware/` (`terminal-unit-firmware`)
-  is the RP2350 binary and depends on it.
+  for logic that is tested on the host. `firmware/app/`
+  (`terminal-unit-firmware`) is the RP2350 binary and depends on it.
 - `hardware/` holds the KiCad 10 project of the rig interface. The schematic
   is `hardware/terminal-unit.kicad_sch`. `hardware/terminal-unit.kicad_pcb`
   is a parts layout for a 2.54 mm universal board, not a board to be
@@ -98,7 +98,7 @@ then the ADC path behind the microphone and on-board demodulation.
 
 ## Build and Test
 
-`rust-toolchain.toml` selects the stable toolchain and installs the
+`firmware/rust-toolchain.toml` selects the stable toolchain and installs the
 `thumbv8m.main-none-eabihf` target.
 
 Flashing and logging need `probe-rs` and a debug probe on the Pico 2's 3-pin
@@ -107,17 +107,18 @@ shows the FSK drive: it is dark while nothing is transmitted and, with
 `INVERT OFF`, lights for every space bit. There is no heartbeat; `PTT ON` on
 the control port makes it flash with the diddle.
 
-The target and the runner are set in `firmware/.cargo/config.toml`, which
-Cargo reads only when it is run inside `firmware/`. The firmware does not
-build for the host, so the workspace root defaults to `core` alone.
+The target and the runner are set in `firmware/app/.cargo/config.toml`, which
+Cargo reads only when it is run inside `firmware/app/`. The firmware does not
+build for the host, so the workspace root, `firmware/`, defaults to `core`
+alone.
 
-In the workspace root:
+In `firmware/`:
 
 - `cargo test` runs the host tests of `core`.
 - `cargo clippy --all-targets -- -D warnings` checks `core`.
 - `cargo fmt --all --check` checks the formatting of both crates.
 
-In `firmware/`:
+In `firmware/app/`:
 
 - `cargo build` builds the firmware. Add `--release` for an optimized build.
   Add `--features tiny2350` to build for the Pimoroni Tiny 2350, which moves
@@ -126,5 +127,5 @@ In `firmware/`:
   `probe-rs run --chip RP235x` and prints the defmt log over RTT.
 - `cargo clippy -- -D warnings` checks the firmware.
 
-Run all three checks in the root and the build and Clippy in `firmware/`
-before completing a code change.
+Run all three checks in `firmware/` and the build and Clippy in
+`firmware/app/` before completing a code change.

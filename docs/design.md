@@ -142,7 +142,7 @@ the FSK transmit task implements it.
 - `status` reports whether PTT is keyed and how many words are queued and
   free.
 
-`firmware/src/keyer.rs` implements it. `FskKeyer` holds the 8192-word queue
+`firmware/app/src/keyer.rs` implements it. `FskKeyer` holds the 8192-word queue
 and follows `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`; `FskOutput` owns the PIO
 state machine that drives the FSK pin. PTT has no pin yet and is logged over
 defmt. `SAVE` goes through the `Storage` trait, which the firmware answers
@@ -212,7 +212,7 @@ with an error until check 9 is done.
   abort never waits behind queued text.
 - The FSK polarity (which of mark / space maps to open / closed) can be
   inverted by a control command.
-- `firmware/src/fault.rs` holds the panic handler and the HardFault
+- `firmware/app/src/fault.rs` holds the panic handler and the HardFault
   handler. Both first disable the state machines of PIO0 and force the FSK
   pin low through the registers, without the driver. The panic handler then
   prints the message over defmt and raises a HardFault with `udf`, as
@@ -249,7 +249,7 @@ The protocol of the control port, its commands, settings and limits, is in
 
 ### UAC Microphone
 
-`embassy-usb` has no UAC microphone class, so `firmware/src/microphone.rs`
+`embassy-usb` has no UAC microphone class, so `firmware/app/src/microphone.rs`
 writes the UAC 1.0 descriptors itself.
 
 - Audio control interface: Input Terminal (Microphone, 0x0201) → Output
@@ -514,8 +514,8 @@ version and source location, datasheet section, manual page) under it.
   write the descriptors and the isochronous IN endpoint ourselves.
   - No. `embassy-usb` 0.6.0 `src/class/uac1/mod.rs` declares only
     `pub mod speaker`, and its `class_codes` and `terminal_type` modules are
-    private. The descriptors are written in `firmware/src/microphone.rs` with
-    the public `InterfaceAltBuilder::descriptor` and
+    private. The descriptors are written in `firmware/app/src/microphone.rs`
+    with the public `InterfaceAltBuilder::descriptor` and
     `endpoint_isochronous_in` (`src/builder.rs`).
 - [x] 2. Whether the `embassy-rp` USB driver supports isochronous transfers.
   - Yes. `embassy-rp` 0.10.0 `src/usb.rs` `alloc_endpoint` accepts
