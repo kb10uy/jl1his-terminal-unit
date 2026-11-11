@@ -22,7 +22,9 @@ FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
   for logic that is tested on the host. `firmware/` (`terminal-unit-firmware`)
   is the RP2350 binary and depends on it.
 - `hardware/` holds the KiCad 10 project of the rig interface. The schematic
-  is `hardware/terminal-unit.kicad_sch`.
+  is `hardware/terminal-unit.kicad_sch`. `hardware/terminal-unit.kicad_pcb`
+  is a parts layout for a 2.54 mm universal board, not a board to be
+  fabricated.
 - The firmware targets the Cortex-M33 cores of the RP2350
   (`thumbv8m.main-none-eabihf`) and uses `embassy-rp`, `embassy-usb` and
   `embassy-sync`.
@@ -82,7 +84,7 @@ FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
 - When an item under "To Check Before Implementing" in `docs/design.md` is
   checked, tick it and write the result and its source under it.
 - Do not settle items under "Undecided" in `docs/design.md` on your own, such
-  as the pin assignment, the hardware license or the control command set.
+  as the pins kept for I2S, the hardware license or the control command set.
   Propose an option with its reasons and ask the user.
 
 ## Commits, Issues and PRs

@@ -1,0 +1,4 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "terminal-unit") (type "KiCad") (uri "${KIPRJMOD}/terminal-unit.pretty") (options "") (descr "Project footprints"))
+)

@@ -42,6 +42,10 @@ On-board demodulation on the RP2350 is a later goal.
 - Pins: the headers expose 26 GPIOs, three of them ADC inputs. GPIO 23
   drives the regulator's power-save pin, GPIO 24 senses VBUS, GPIO 25
   drives the user LED and GPIO 29 measures VSYS / 3 (section 3.1).
+- Pin assignment: the receive AF goes to GPIO 26 (ADC0, pin 31), FSK comes
+  from GPIO 17 (pin 22) and PTT from GPIO 16 (pin 21). GPIO 26 sits beside
+  AGND, and GPIO 16 and 17 sit at the end of the board next to a GND pin,
+  which keeps the wiring of the perfboard layout short.
 - Power: 3V3 comes from an RT6150 buck-boost switching regulator. The
   datasheet recommends keeping external loads on the 3V3 pin under 300 mA.
   With GPIO 23 low, the default, the regulator runs in PFM mode; driving it
@@ -189,8 +193,14 @@ of the ADC.
 
 The schematic is `hardware/terminal-unit.kicad_sch`, drawn with KiCad 10. Its
 component values are starting points for the prototype, not decisions. The
-Pico 2 is not on the sheet yet, so the GPIO and ADC connections end in
-global labels.
+Pico 2 is on the sheet as A1, drawn with KiCad's `RaspberryPi_Pico` symbol,
+which also covers the Pico 2, and global labels join it to the circuits.
+
+The USB side has two ground nets. GNDA carries the grounds of the receive AF
+stage and of the op-amp supply and returns to AGND on pin 33. GND carries
+the grounds of the FSK / PTT drivers and returns to the GND pins. The two
+join only inside the Pico 2. The 3V3 pin, the GND pins and AGND are power
+outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
 
 ### Receive AF Input Stage
 
@@ -217,6 +227,8 @@ global labels.
   2.4 Vp-p at the ADC, allowing for the transformer's winding resistance
   but not its magnetizing inductance or leakage. Measure the actual level
   before choosing the gain. See `circuit-review.md`.
+- The trimmer RV1 is a Bourns 3296W. The layout uses KiCad's footprint
+  `Potentiometer_Bourns_3296W_Vertical`, three pins in a row 2.54 mm apart.
 - Overvoltage protection: a series resistor, then two BAT43 Schottky diodes
   in DO-35 that clamp the op-amp input to the supply rails. The BAT43
   withstands 30 V, leaks at most 0.5 µA at 25 V, drops 0.26 V to 0.33 V at
@@ -233,8 +245,8 @@ global labels.
   catalogue lists the case with leads and with PCB pins and gives the
   frequency response as a graph from 0.2 kHz to 10 kHz (Hashimoto Denki,
   "トランジスタ用小型トランス" ST series catalogue,
-  `akizukidenshi.com/goodsaffix/st.pdf`). Which of the two cases to use is not
-  chosen yet.
+  `akizukidenshi.com/goodsaffix/st.pdf`). The unit uses the case with leads,
+  which reach any hole of a universal board.
 
 ### Rig-Side Specifications and Assumptions
 
@@ -295,9 +307,14 @@ global labels.
 
 ### Connector
 
-- The unit has one 6-pin mini-DIN jack, mounted on a pitch-conversion board.
-  Its pinout mirrors the RTTY/DATA jack of the FTDX10, so a straight cable
-  with all six conductors joins the two. Other rigs take an adapter cable.
+- The unit has one 6-pin mini-DIN jack, mounted on a pitch-conversion board
+  of about 27 mm by 16.5 mm with eight pins in a row about 2.54 mm from one
+  long side. With that side on the left, the pins are marked G, 3, 5, 1, 2,
+  6, 4, G from top to bottom (read from the board in hand). What the two G
+  pins connect to has not been checked; the layout joins them to GND_RIG.
+  The pinout of the jack mirrors the RTTY/DATA jack of the FTDX10, so a
+  straight cable with all six conductors joins the two. Other rigs take an
+  adapter cable.
 
 | Pin | Unit | FTDX10 RTTY/DATA |
 |---|---|---|
@@ -314,6 +331,54 @@ global labels.
 - The shell of the jack and the shield of the cable connect to the rig's
   ground only. Joining them to the USB ground or the USB shield, directly or
   through a metal enclosure, defeats the isolation.
+
+### Perfboard Layout
+
+`hardware/terminal-unit.kicad_pcb` is not a board to be fabricated. It places
+the parts on a universal board with a 2.54 mm grid, 37 by 28 holes, with the
+Pico 2 in sockets on the same board. With 3.5 mm beyond the outer holes that
+is about 98 mm by 76 mm. It is a draft, and the board to build on has not
+been chosen.
+
+- Hole (1, 1) is at (50.8 mm, 50.8 mm), so a 2.54 mm grid in the PCB editor
+  falls on the holes. The `Dwgs.User` layer shows the holes and numbers
+  their columns and rows.
+- Tracks on `B.Cu` are bare links on the solder side and run from hole to
+  adjacent hole. Tracks on `F.Cu` stand for insulated wires on the solder
+  side; only their ends matter, not the path drawn.
+- Columns 27 and 28 stay empty as the isolation gap, and a rule area keeps
+  tracks and pads out of them. The USB side is columns 1 to 26 and the rig
+  side columns 29 to 37. Only T1, U2 and U3 straddle the gap.
+- GNDA returns to AGND on pin 33 and the GND of the drivers to pin 18. The
+  footprint of the Pico 2 on the board lists its seven GND pads as a jumper
+  pad group, which the library footprint does not, so that DRC treats them
+  as joined inside the module. The LED supply is a wire of its own from the
+  3V3 pin.
+- The ground of the drivers goes round to pin 18 because the footprint
+  shared by the Pico boards keeps copper out of the area under the antenna
+  of the W variants, at the end of the board away from USB.
+- The FSK / PTT drivers fill columns 21 to 26 beyond the end of the Pico 2,
+  FSK in rows 9 to 15 and PTT in rows 16 to 22. All their resistors lie
+  flat, one row each, and one ground rail in column 23 runs under them.
+- Where pads sit in adjacent holes DRC reports overlapping courtyards. T1
+  reaches to within about 1 mm of the top edge drawn for the board.
+- The receive AF stage keeps at least one empty hole between neighbouring
+  parts where the nets allow, and leaves rows 1 to 3 and row 19, next to
+  the Pico 2, free. The 3V3, VBIAS and GNDA rails run along rows 4, 5 and 7
+  above U1, the three signal nets of U1A along rows 9 to 11 to its right,
+  and R5 runs straight down to GP26.
+- The breakout board of J1 lies flat over columns 30 to 36 with its pins in
+  column 31, rows 13 to 20, and the jack facing the edge of the board. C1
+  sits above it in row 10. The rig side needs two insulated wires: FSK from
+  U2 to pin 4, and a link between the GND_RIG of U2 and that of U3.
+- Two footprints rest on assumptions. `ST-78_Leads_Perfboard` takes the body
+  of T1 as 16.5 mm by 20 mm, read from the dimension table of the ST
+  catalogue without its drawing, and puts the lead holes where the layout
+  wants them; the leads have to reach up to 16 mm from the body, and their
+  length has not been checked. `MiniDIN6_Breakout_SIP8` assumes that the
+  breakout board extends equally beyond both end pins and that the jack
+  faces away from the pin row (unverified). Its two G pads carry pad number
+  2, so that they take the net of the jack's ground pin.
 
 ## 5. Working Around RP2350-E9 (Stepping A2)
 
@@ -396,8 +461,8 @@ version and source location, datasheet section, manual page) under it.
 
 ## 8. Undecided
 
-- The pin assignment: FSK, PTT, the ADC input, and pins kept for I2S. The
-  Pico 2 exposes enough GPIOs for all of them.
+- The pins kept for an external I2S ADC. GPIO 18 to 21 are four consecutive
+  free pins and are the proposal.
 - Whether to hold GPIO 23 high for PWM mode, filter the op-amp supply or fit
   an external ADC reference. Decide after measuring the ADC noise.
 - The load on the transformer secondary. 10 kΩ matches the transformer but
