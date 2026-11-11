@@ -143,10 +143,11 @@ the FSK transmit task implements it.
   free.
 
 `firmware/app/src/keyer.rs` implements it. `FskKeyer` holds the 8192-word queue
-and follows `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`; `FskOutput` owns the PIO
-state machine that drives the FSK pin. PTT has no pin yet and is logged over
-defmt. `SAVE` goes through the `Storage` trait, which the firmware answers
-with an error until check 9 is done.
+and follows `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`; `FskOutput`, in
+`keyer/output.rs` beside it, owns the PIO state machine that drives the FSK
+pin. PTT has no pin yet and is logged over defmt. `SAVE` goes through the
+`Storage` trait, which the firmware answers with an error until check 9 is
+done.
 
 ### FSK Transmit
 
