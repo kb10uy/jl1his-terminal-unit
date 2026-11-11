@@ -295,9 +295,15 @@ outputs in the symbol, so +3V3, GND and GNDA need no PWR_FLAG.
   at 2 mA and VCE(sat) at most 0.25 V (2SC1815 datasheet, Lumimax,
   2024-04-26 Rev 1.3).
 - The GPIO drives the base through 4.7 kΩ (R12 / R13). The base current is
-  about 0.55 mA at 3.3 V and 0.41 mA at the GPIO's 2.62 V floor, a forced
-  gain of 25 to 33 against the minimum hFE of 70. With the pull-down the
-  GPIO supplies about 2 mA. Both outputs keyed draw about 27 mA from 3V3.
+  about 0.55 mA at 3.3 V and 0.41 mA at the GPIO's 2.62 V floor, assuming
+  VBE = 0.7 V. The hFE minimum of 70 is specified at VCE = 6 V and
+  IC = 2 mA and does not establish saturation at the present load. A
+  proposal is to reduce R12 / R13 to 1 kΩ and configure the GPIO drive
+  strength to 8 mA, giving a forced gain around 5–10 for the estimated
+  LED load. This still needs verification with the purchased transistor.
+  With the present 4.7 kΩ resistors and pull-downs each GPIO supplies about
+  2 mA. The two LED branches together draw about 27 mA from 3V3; GPIO
+  currents add to this supply load.
 - So that nothing transmits right after power-up or while pins are
   undefined, R8 / R9 pull each GPIO to ground through 2.2 kΩ, which holds
   the transistor and so the LED off. 2.2 kΩ is well under the 8.2 kΩ limit

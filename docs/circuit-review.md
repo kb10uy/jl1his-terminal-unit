@@ -152,3 +152,42 @@ figures and their limits are in section 4 of `design.md`. The statements
 above about R6 to R9 describe the schematic as reviewed, not the present
 one. With the GPIO labels now on two pins each, KiCad CLI reports no ERC
 violations. The other findings stand.
+
+## Re-review of the transistor drivers, 2026-11-11
+
+Re-exported the updated netlist and rendered schematic with KiCad CLI
+10.0.8. The analog component values and connectivity are unchanged. ERC,
+including warnings and exclusions, reports zero violations under the
+project's configured checks.
+
+The Q1 / Q2 emitter, collector and base connections are correct. R8 / R9
+now pull the GPIO nodes directly to ground, with the bases reached through
+R12 / R13. R6 / R7 = 150 Ω give about 13.7 mA per LED if VF = 1.15 V and
+VCE = 0.1 V. At supply −5%, VF = 1.3 V, VCE = 0.25 V and resistance +1%,
+the estimate is 10.46 mA. These estimates improve the previous LED current
+budget, but depend on Q1 / Q2 attaining the assumed collector voltage.
+The LED resistors dissipate about 41 mW even with supply +5%, VF = 1 V,
+VCE = 0 V and resistance −1%; ordinary 0.125 W or 0.25 W parts suffice
+for this operating estimate.
+
+One remaining margin to improve is R12 / R13 = 4.7 kΩ. The base current is
+about 0.55 mA at VOH = 3.3 V and VBE = 0.7 V. Using VOH = 2.62 V,
+VBE = 1 V and resistance +1% gives about 0.34 mA, as an estimate rather
+than a guaranteed operating corner. The transistor's minimum hFE at
+VCE = 6 V does not establish low-voltage saturation, and its 0.25 V
+VCE(sat) limit is tested at IC / IB = 10. The present forced gain is about
+25 nominally, so the LED current calculation must not be treated as a
+guarantee based on the quoted saturation limit.
+
+For more base-drive margin, the proposal is R12 / R13 = 1 kΩ with GPIO
+drive strength set to 8 mA. Nominal GPIO current would be about 4.1 mA,
+including the 2.2 kΩ pull-down, and the forced gain would be about 5–10
+over the estimates above. This is a conservative design approach, not a
+new datasheet guarantee at a different collector current. Measure the
+150 Ω voltage drop, Q1 / Q2 collector voltage and optocoupler output Low
+voltage under the actual rig load. No schematic values were changed by
+this re-review.
+
+Sources: [Lumimax 2SC1815 datasheet, Rev 1.3](https://mm.digikey.com/Volume0/opasdata/d220001/medias/docus/984/2SC1815.pdf),
+[Toshiba 2SC1815 datasheet, electrical characteristics](https://media.digikey.com/pdf/Data%20Sheets/Toshiba%20PDFs/2SC1815.pdf),
+[Toshiba TLP785 datasheet](https://toshiba.semicon-storage.com/info/TLP785_datasheet_en_20190311.pdf?did=10569&prodName=TLP785).
