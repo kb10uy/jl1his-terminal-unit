@@ -3,6 +3,7 @@
 
 mod microphone;
 
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_futures::join::join3;
 use embassy_rp::{
@@ -18,8 +19,8 @@ use embassy_rp::{
 use embassy_time::Timer;
 use embassy_usb::{Builder, Config};
 use microphone::{Microphone, SAMPLE_RATE_HZ, SAMPLES_PER_FRAME};
-use panic_halt as _;
 use terminal_unit_core::tone::Sine;
+use {defmt_rtt as _, panic_probe as _};
 
 #[unsafe(link_section = ".bi_entries")]
 #[used]
@@ -43,7 +44,8 @@ const TEST_TONE_AMPLITUDE: f32 = 0.5;
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let mut led_green = Output::new(p.PIN_19, Level::High);
+    info!("jl1his-terminal-unit started");
+    let mut led = Output::new(p.PIN_25, Level::Low);
 
     let mut usb_config = Config::new(USB_VID, USB_PID);
     usb_config.product = Some("RTTY Terminal Unit");
@@ -78,7 +80,7 @@ async fn main(_spawner: Spawner) {
 
     let blink = async {
         loop {
-            led_green.toggle();
+            led.toggle();
             Timer::after_millis(500).await;
         }
     };

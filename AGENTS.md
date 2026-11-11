@@ -11,10 +11,10 @@ change settings.
 The design is recorded in `docs/design.md`, and the protocol of the control
 port in `docs/control-port.md`. Read them before starting work.
 
-The firmware was brought up on a Pimoroni Tiny 2350 and is not ported to the
-Pico 2 yet. It blinks the Tiny 2350's LED and presents a UAC microphone that
-streams a 1 kHz test tone. Next come stage 1, the control port and PIO-based
-FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
+The firmware targets the Pico 2. It blinks the on-board LED and presents a
+UAC microphone that streams a 1 kHz test tone. Next come stage 1, the control
+port and PIO-based FSK / PTT, then the ADC path behind the microphone and
+on-board demodulation.
 
 ## Architecture
 
@@ -99,12 +99,9 @@ FSK / PTT, then the ADC path behind the microphone and on-board demodulation.
 `rust-toolchain.toml` selects the stable toolchain and installs the
 `thumbv8m.main-none-eabihf` target.
 
-No debug probe is set up, so there is no RTT log, although the Pico 2 exposes
-SWD on a 3-pin header. The firmware is flashed over USB with `picotool`,
-whose prebuilt binaries are published in the `raspberrypi/pico-sdk-tools`
-releases. Put the board into BOOTSEL mode before flashing. On the Tiny 2350
-the on-board green LED blinking once a second shows that the firmware is
-running; the firmware does not drive the Pico 2's LED on GPIO 25 yet.
+Flashing and logging need `probe-rs` and a debug probe on the Pico 2's 3-pin
+SWD header. The firmware logs over defmt-rtt. The on-board LED on GPIO 25
+blinking once a second shows that the firmware is running.
 
 The target and the runner are set in `firmware/.cargo/config.toml`, which
 Cargo reads only when it is run inside `firmware/`. The firmware does not
@@ -119,8 +116,8 @@ In the workspace root:
 In `firmware/`:
 
 - `cargo build` builds the firmware. Add `--release` for an optimized build.
-- `cargo run` flashes a board in BOOTSEL mode with
-  `picotool load -u -v -x -t elf` and starts the firmware.
+- `cargo run` flashes the board through the probe with
+  `probe-rs run --chip RP235x` and prints the defmt log over RTT.
 - `cargo clippy -- -D warnings` checks the firmware.
 
 Run all three checks in the root and the build and Clippy in `firmware/`

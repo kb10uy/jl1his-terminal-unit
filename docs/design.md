@@ -27,18 +27,18 @@ On-board demodulation on the RP2350 is a later goal.
   source is given, the board facts in this document come from the Pico 2
   datasheet (RP-008299-DS-3, release of 2026-07-03),
   `pip-assets.raspberrypi.com/categories/1005-raspberry-pi-pico-2/documents/RP-008299-DS-3-pico-2-datasheet.pdf`.
-- The firmware so far was brought up on a Pimoroni Tiny 2350 and is not
-  ported yet. It still blinks that board's green LED on GPIO 19, which is
-  active low; the Tiny 2350 has an RGB LED on GPIO 18, 19 and 20 (pico-sdk
-  `src/boards/include/boards/pimoroni_tiny2350.h`, pimoroni-pico
-  `drivers/rgbled/rgbled.hpp`).
+- On-board LED: the firmware blinks the user LED on GPIO 25, which is
+  active high: pico-sdk `src/boards/include/boards/pico2.h` sets
+  `PICO_DEFAULT_LED_PIN` to 25 and does not define
+  `PICO_DEFAULT_LED_PIN_INVERTED`.
 - Chip stepping: not known until the Pico 2 is at hand. The Tiny 2350 is
   marked RP2350A0A2, stepping A2, which erratum RP2350-E9 affects. The design
   keeps the E9 workarounds either way.
-- Debug: the Pico 2 brings SWD out on a 3-pin debug header (section 5.8), so
-  a debug probe and an RTT log become possible. None is set up yet: firmware
-  is flashed over USB in BOOTSEL mode with `picotool`. Logs and status go
-  out through the control port once it exists.
+- Debug: the Pico 2 brings SWD out on a 3-pin debug header (section 5.8).
+  Firmware is flashed through a debug probe with `probe-rs`, and logs over
+  defmt-rtt. The `BOOTSEL` command of the control port stays, so that a unit
+  without a probe attached can still be reflashed over USB. Logs and status
+  for the PC go out through the control port once it exists.
 - Pins: the headers expose 26 GPIOs, three of them ADC inputs. GPIO 23
   drives the regulator's power-save pin, GPIO 24 senses VBUS, GPIO 25
   drives the user LED and GPIO 29 measures VSYS / 3 (section 3.1).
@@ -127,8 +127,10 @@ connected with `embassy-sync` Channel / Signal.
   abort never waits behind queued text.
 - The FSK polarity (which of mark / space maps to open / closed) can be
   inverted by a control command.
-- The scaffold halts on panic with `panic-halt`. Once the FSK / PTT outputs
-  exist, replace it with a handler that releases both before anything else.
+- The scaffold handles panics with `panic-probe`, which prints the message
+  over defmt and raises a HardFault with `udf` (panic-probe 1.0.0
+  `src/lib.rs`, `hard_fault`). Once the FSK / PTT outputs exist, replace it
+  with a handler that releases both before anything else.
 
 ### Control Port
 
