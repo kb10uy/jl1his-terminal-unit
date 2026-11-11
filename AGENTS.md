@@ -11,10 +11,11 @@ change settings.
 The design is recorded in `docs/design.md`, and the protocol of the control
 port in `docs/control-port.md`. Read them before starting work.
 
-The firmware targets the Pico 2. It blinks the on-board LED and presents a
-UAC microphone that streams a 1 kHz test tone. Next come stage 1, the control
-port and PIO-based FSK / PTT, then the ADC path behind the microphone and
-on-board demodulation.
+The firmware targets the Pico 2. It blinks the on-board LED, presents a UAC
+microphone that streams a 1 kHz test tone, and runs the control port, whose
+parser and executor live in `core` behind the `Keyer` trait. A stub keyer
+stands in for the transmitter. Next comes PIO-based FSK / PTT behind that
+trait, then the ADC path behind the microphone and on-board demodulation.
 
 ## Architecture
 

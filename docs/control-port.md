@@ -1,8 +1,12 @@
 # Control Port Protocol
 
-The text protocol of the CDC ACM control port. The firmware does not
-implement it yet. Open points are listed under "Undecided" in `design.md`.
-Items marked "unverified" come from memory, as in `design.md`.
+The text protocol of the CDC ACM control port. `terminal_unit_core::control`
+implements it, and the firmware runs it on the control port. The firmware
+keys nothing yet: a stub keyer logs the code words over defmt at the
+configured rate (see "Keyer Interface" in `design.md`), and `SAVE` answers
+`ERR` until settings can be stored in flash. Open points are listed under
+"Undecided" in `design.md`. Items marked "unverified" come from memory, as in
+`design.md`.
 
 ## Control Port Framing
 
@@ -17,7 +21,8 @@ program. There is no binary mode.
   case, since Baudot has no lower case.
 - Ctrl-C (0x03) aborts the transmission and discards the queue as soon as it
   arrives, in every mode and without waiting for the end of the line. It is
-  handled byte by byte, before line assembly.
+  handled byte by byte, before line assembly. It also discards the line being
+  assembled, leaves keyboard mode and is answered with `OK`.
 - Ctrl-S (0x13) and Ctrl-Q (0x11) are not given any meaning: a terminal with
   XON / XOFF flow control consumes them.
 - The firmware does not echo its input. The terminal's local echo shows what
@@ -35,34 +40,42 @@ program. There is no binary mode.
 - A backslash (0x5C) starts an escape: `\r` is CR, `\n` is LF and `\a` is
   BEL. Baudot has no backslash, so reserving it takes no character away. Any
   other escape is answered with `ERR`.
-- Keyboard mode, entered by a command, queues each character as it arrives,
-  and the end of a line, as defined above, is sent as CR LF. Ctrl-Z (0x1A)
-  leaves the mode and releases PTT once the queue has been sent in full.
-  Ctrl-C aborts as in any mode.
+- Keyboard mode, entered by `KEY`, keys PTT and queues each character as it
+  arrives, and the end of a line, as defined above, is sent as CR LF. A
+  queued character is not answered. BS and DEL are ignored, since what they
+  would delete may already be on the air. Ctrl-Z (0x1A) leaves the mode,
+  releases PTT once the queue has been sent in full and is answered with
+  `OK`. Ctrl-C aborts as in any mode.
+- Text is sent as Baudot only, so `TX` and `KEY` are answered with `ERR`
+  unless `BITS` is 5. What they do with other `BITS` is undecided.
+- A character that the figures table of `CODE` does not hold is answered with
+  `ERR`, and nothing of the command is queued.
 
 ## Control Commands
 
 A command is its name, a space and its arguments. `TX` takes the rest of the
-line after that space as it is. "While transmitting" below means while PTT
-is keyed or the queue is not empty.
+line after that space as it is. The arguments of the other commands are
+separated by one or more spaces, and spaces at the end of the line are
+ignored. "While transmitting" below means while PTT is keyed or the queue is
+not empty.
 
 | Command | Action |
 |---|---|
 | `TX <text>` | Queue text, converted as described in "Transmit Text" |
 | `SEND <hex>` | Queue code words without conversion, two hexadecimal digits per word |
-| `PTT ON` | Key PTT |
+| `PTT ON` | Key PTT. Text queued while PTT is released waits for it and for `TXDELAY` |
 | `PTT OFF` | Release PTT once the queue has been sent in full |
-| `KEY` | Enter keyboard mode |
+| `KEY` | Key PTT and enter keyboard mode |
 | `ABORT` | Abort as Ctrl-C does |
 | `SET <name> <value>` | Change a setting at once. It is not stored until `SAVE` |
 | `GET <name>` | Reply `OK <value>` |
 | `GET` | Reply every setting on one line, `OK NAME=value ...` |
-| `STATUS` | Reply on one line, `OK NAME=value ...`: PTT, mode, queued and free bytes (`FREE`) |
+| `STATUS` | Reply on one line, such as `OK PTT=ON MODE=KEYBOARD QUEUED=12 FREE=8180`. `MODE` is `COMMAND` or `KEYBOARD`; `QUEUED` and `FREE` count code words |
 | `SAVE` | Store the settings in flash. Refused with `ERR` while transmitting |
 | `DEFAULTS` | Set every setting to its default. It is not stored until `SAVE` |
 | `VER` | Reply the firmware version |
-| `BOOTSEL` | Reboot into BOOTSEL mode for flashing |
-| `HELP` | List the commands |
+| `BOOTSEL` | Abort, reply `OK` and reboot into BOOTSEL mode for flashing |
+| `HELP` | List the command names on one line |
 
 - `SEND` writes data as hexadecimal rather than raw bytes, so it stays a
   line of text: Ctrl-C keeps working, no line end can be mistaken for data,
@@ -76,19 +89,22 @@ is keyed or the queue is not empty.
 
 ## Settings
 
-| Name | Values | Meaning |
-|---|---|---|
-| `BAUD` | decimal, such as `45.45` | Baud rate |
-| `BITS` | `5` to `8` | Data bits |
-| `STOP` | `1`, `1.5`, `2` | Stop bits |
-| `INVERT` | `ON`, `OFF` | Invert the FSK polarity |
-| `TXDELAY` | milliseconds | Mark sent after PTT is keyed, before the first character |
-| `TXTAIL` | milliseconds | Wait after the last character before PTT is released |
-| `DIDDLE` | `OFF`, `LTRS` | Hold mark, or send LTRS, while PTT is keyed and the queue is empty |
-| `USOS` | `ON`, `OFF` | Unshift on space: send FIGS again after a space before figures |
-| `CODE` | `ITA2`, `US` | The figures table, which differs in `$`, `'`, BEL and others |
-| `TOT` | seconds, `OFF` | Abort and release PTT after transmitting this long |
-| `GAIN` | to be defined | Digital gain of the UAC microphone |
+| Name | Values | Default | Meaning |
+|---|---|---|---|
+| `BAUD` | `10` to `1200`, up to three decimals, such as `45.45` | `45.45` | Baud rate |
+| `BITS` | `5` to `8` | `5` | Data bits |
+| `STOP` | `1`, `1.5`, `2` | `1.5` | Stop bits |
+| `INVERT` | `ON`, `OFF` | `OFF` | Invert the FSK polarity |
+| `TXDELAY` | milliseconds, `0` to `65535` | `100` | Mark sent after PTT is keyed, before the first character |
+| `TXTAIL` | milliseconds, `0` to `65535` | `50` | Wait after the last character before PTT is released |
+| `DIDDLE` | `OFF`, `LTRS` | `LTRS` | Hold mark, or send LTRS, while PTT is keyed and the queue is empty |
+| `USOS` | `ON`, `OFF` | `ON` | Unshift on space: send FIGS again after a space before figures |
+| `CODE` | `ITA2`, `US` | `ITA2` | The figures table, which differs in `$`, `'`, BEL and others |
+| `TOT` | seconds, `1` to `65535`, `OFF` | `600` | Abort and release PTT after transmitting this long |
+| `GAIN` | to be defined | to be defined | Digital gain of the UAC microphone. Not implemented yet |
+
+- Setting names and keyword values are not case-sensitive. `GET` shows
+  keywords in upper case and `BAUD` without trailing zeros.
 
 - `DIDDLE`, `USOS` and `CODE` apply to Baudot, with `BITS 5`, only.
 - Settings are stored in flash only by `SAVE`, so that trying values neither
@@ -98,6 +114,40 @@ is keyed or the queue is not empty.
 - `SAVE` is refused while transmitting because XIP stops while the flash is
   erased, which may disturb the USB audio stream and the refilling of the
   FSK output (unverified).
+
+## Baudot Conversion
+
+`TX` and keyboard mode convert text to ITA2 code words and insert LTRS and
+FIGS where the shift changes. Both figures tables share `-` `?` `:` `(` `)`
+`.` `,` `/` and the digits. They differ in these codes (unverified; see check
+12 in `design.md`):
+
+| Letter key | `ITA2` | `US` |
+|---|---|---|
+| D | not sent (WRU) | `$` |
+| F | not sent | `!` |
+| G | not sent | `&` |
+| H | not sent | `#` |
+| J | BEL | `'` |
+| S | `'` | BEL |
+| V | `=` | `;` |
+| Z | `+` | `"` |
+
+- The first character after power-up, `SEND`, `SET BITS` or `DEFAULTS` is
+  preceded by its shift.
+- When the receiver may have lost the shift since the last code word was
+  queued, because the transmitter sent a diddle LTRS, released PTT or
+  aborted, the shift is sent again before the next character that needs it.
+- With `USOS ON` a space puts the converter in letters, so the next figure
+  is preceded by FIGS and the next letter by nothing.
+
+## Errors
+
+`ERR` is followed by one of these reasons: `unknown command`,
+`bad argument`, `unknown setting`, `bad value`, `line too long`,
+`queue full`, `bad escape`, `character not in code`,
+`odd number of digits`, `word does not fit BITS`, `TX needs BITS 5`,
+`transmitting` (`SAVE`), or the reason a save failed.
 
 ## Limits
 

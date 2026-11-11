@@ -1,11 +1,13 @@
 #![no_std]
 #![no_main]
 
+mod control;
+mod keyer;
 mod microphone;
 
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_futures::join::join3;
+use embassy_futures::join::join5;
 use embassy_rp::{
     binary_info::{
         EntryAddr, rp_cargo_version, rp_program_build_attribute, rp_program_description,
@@ -17,9 +19,13 @@ use embassy_rp::{
     usb,
 };
 use embassy_time::Timer;
-use embassy_usb::{Builder, Config};
+use embassy_usb::{
+    Builder, Config,
+    class::cdc_acm::{CdcAcmClass, State},
+};
+use keyer::StubKeyer;
 use microphone::{Microphone, SAMPLE_RATE_HZ, SAMPLES_PER_FRAME};
-use terminal_unit_core::tone::Sine;
+use terminal_unit_core::{settings::Settings, tone::Sine};
 use {defmt_rtt as _, panic_probe as _};
 
 #[unsafe(link_section = ".bi_entries")]
@@ -36,7 +42,7 @@ bind_interrupts!(struct Irqs {
 });
 
 const USB_VID: u16 = 0x1209;
-const USB_PID: u16 = 0x0001;
+const USB_PID: u16 = 0x0002;
 
 const TEST_TONE_HZ: u32 = 1_000;
 const TEST_TONE_AMPLITUDE: f32 = 0.5;
@@ -53,6 +59,7 @@ async fn main(_spawner: Spawner) {
     let mut config_descriptor = [0; 256];
     let mut bos_descriptor = [0; 256];
     let mut control_buf = [0; 64];
+    let mut cdc_state = State::new();
     let mut builder = Builder::new(
         usb::Driver::new(p.USB, Irqs),
         usb_config,
@@ -62,6 +69,7 @@ async fn main(_spawner: Spawner) {
         &mut control_buf,
     );
     let mut microphone = Microphone::new(&mut builder);
+    let control_port = CdcAcmClass::new(&mut builder, &mut cdc_state, control::MAX_PACKET_SIZE);
     let mut usb_device = builder.build();
 
     let audio = async {
@@ -78,6 +86,9 @@ async fn main(_spawner: Spawner) {
         }
     };
 
+    let settings = Settings::default();
+    let keyer = StubKeyer::new(settings);
+
     let blink = async {
         loop {
             led.toggle();
@@ -85,5 +96,12 @@ async fn main(_spawner: Spawner) {
         }
     };
 
-    join3(usb_device.run(), audio, blink).await;
+    join5(
+        usb_device.run(),
+        audio,
+        blink,
+        control::run(control_port, settings, &keyer),
+        keyer.run(),
+    )
+    .await;
 }

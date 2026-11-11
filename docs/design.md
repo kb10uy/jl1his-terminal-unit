@@ -1,8 +1,9 @@
 # RTTY Terminal Unit Design
 
 Decisions from the design discussion. The firmware presents the UAC
-microphone and streams a test tone through it; no other part of the stages
-below is implemented. Items marked "unverified" come from
+microphone and streams a test tone through it, and runs the control port
+with a stub in place of the PIO keyer; no other part of the stages below is
+implemented. Items marked "unverified" come from
 memory and have not been checked against source code, datasheets or manuals.
 Once an item is verified, remove the mark and cite the source.
 
@@ -93,7 +94,7 @@ hardware design files is undecided.
 - Until it is allocated, the firmware uses the pid.codes test PIDs
   1209:0001–0010 (https://pid.codes/1209/), starting at 0001. Move to the
   next one whenever the descriptor configuration changes, because Windows
-  caches the old configuration.
+  caches the old configuration. Adding the control port moved it to 0002.
 - To request a PID (https://pid.codes/howto/), the repository has to be
   public and carry a LICENSE file with a recognised open source license. If
   it holds both hardware and software, both need one. The request is a pull
@@ -107,6 +108,32 @@ hardware design files is undecided.
 
 Four tasks: the USB device, FSK transmit, control commands and audio,
 connected with `embassy-sync` Channel / Signal.
+
+### Keyer Interface
+
+The control port and the transmitter meet at the `Keyer` trait in
+`terminal_unit_core::control`. Line assembly, command parsing, settings and
+the Baudot conversion live in `core` behind it and are tested on the host;
+the FSK transmit task implements it.
+
+- `apply` takes the settings after every `SET` and `DEFAULTS`.
+- `enqueue` takes code words, all or none: it fails with `QueueFull` when
+  they do not fit. It also takes an optional `resync` word, the shift that
+  the first character needs when the converter did not emit one. The keyer
+  puts it in front only when the receiver may have lost the shift since the
+  last word was queued: it sent a diddle LTRS, released PTT or aborted. The
+  converter cannot know this, since the queue drains while it waits.
+- `ptt_on` keys PTT. Words queued while PTT is released wait for it and for
+  `TXDELAY`. `ptt_off` releases PTT once the queue has been sent in full and
+  `TXTAIL` has passed. `abort` discards the queue and releases PTT at once.
+- `status` reports whether PTT is keyed and how many words are queued and
+  free.
+
+`firmware/src/keyer.rs` holds a stub with the 8192-word queue. It follows
+`TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT` with timers, logs each word over defmt
+at the configured character rate and drives no pins. The PIO keyer replaces
+it. `SAVE` goes through the `Storage` trait, which the firmware answers with
+an error until check 9 is done.
 
 ### FSK Transmit
 
@@ -470,13 +497,21 @@ version and source location, datasheet section, manual page) under it.
     still need checking.
 - [ ] 9. How `embassy-rp` writes the flash, whether XIP stops while a sector
   is erased, and what that does to the USB audio stream and the FSK output.
-- [ ] 10. How the firmware reboots the RP2350 into BOOTSEL mode with
+- [x] 10. How the firmware reboots the RP2350 into BOOTSEL mode with
   `embassy-rp`.
+  - `embassy-rp` 0.10.0 `src/rom_data/rp235x.rs` `reset_to_usb_boot` calls
+    the bootrom `reboot` with `REBOOT2_FLAG_REBOOT_TYPE_BOOTSEL` and
+    `REBOOT2_FLAG_NO_RETURN_ON_SUCCESS`, translated from pico-sdk
+    `bootrom.c`. The `BOOTSEL` command calls it with both masks 0, after up
+    to 500 ms for the reply to drain. Not yet tried on hardware.
 - [ ] 11. Whether the host asserts DTR when it opens the control port and
   drops it when it closes the port, also when a program exits without
   closing it: Windows `usbser.sys`, Linux `cdc_acm`, Tera Term and pyserial.
   Whether ModemManager probes the port, whose interface protocol is 0x00
   (`cdc_acm.rs`, `CDC_PROTOCOL_NONE`).
+- [ ] 12. The ITA2 and US figures tables in `terminal_unit_core::baudot` and
+  in "Baudot Conversion" of `control-port.md`, against ITU-T
+  Recommendation S.1 and a source for the US teleprinter code.
 
 ## 8. Undecided
 
@@ -489,14 +524,12 @@ version and source location, datasheet section, manual page) under it.
   may peak at the high end. Measure both on the prototype.
 - The tags of the lines the control port sends toward the PC
   (`control-port.md`).
-- Whether `TX` while PTT is released only queues the text until `PTT ON`
-  and `TXDELAY` have passed. That is the proposal, so that text can be
-  queued before keying.
-- What `TX` does with `BITS` other than 5. The proposal is to send ASCII
-  codes as they are, without upper-casing, with 7 or 8 bits, and to answer
-  `ERR` with 6.
+- What `TX` does with `BITS` other than 5. For now it is answered with
+  `ERR`. The proposal is to send ASCII codes as they are, without
+  upper-casing, with 7 or 8 bits, and to answer `ERR` with 6.
 - Whether a `PARITY` setting is needed for 7- and 8-bit transfers.
-- The default of every setting, in particular `TOT`, and the scale of `GAIN`.
+- The scale and default of `GAIN`. The other defaults are in
+  `control-port.md`.
 - Whether the unit also follows the TinyFSK protocol, so that the existing
   `tinyfsk.fsk` can drive it from MMTTY. The TinyFSK protocol has not been
   checked against its documentation, nor whether it fits the framing in
