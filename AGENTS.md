@@ -8,7 +8,8 @@ composite USB device: a USB Audio microphone that carries the rig's receive
 AF, and a CDC ACM port that takes text commands to key FSK and PTT and to
 change settings.
 
-The design is recorded in `docs/design.md`. Read it before starting work.
+The design is recorded in `docs/design.md`, and the protocol of the control
+port in `docs/control-port.md`. Read them before starting work.
 
 The firmware was brought up on a Pimoroni Tiny 2350 and is not ported to the
 Pico 2 yet. It blinks the Tiny 2350's LED and presents a UAC microphone that
