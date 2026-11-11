@@ -175,10 +175,10 @@ global labels.
 
 1. Isolation transformer (10 kΩ : 10 kΩ)
 2. AC coupling
-3. Attenuator / gain adjustment
-4. Non-inverting amplifier (3.3 V single supply, rail-to-rail, 1.65 V bias)
-5. RC anti-aliasing LPF (a few kHz to 10 kHz)
-6. Series resistor + small capacitor → ADC pin
+3. Non-inverting amplifier with trimmer-set gain (3.3 V single supply,
+   rail-to-rail, 1.65 V bias)
+4. RC anti-aliasing LPF (a few kHz to 10 kHz)
+5. Series resistor + small capacitor → ADC pin
 
 - The op-amp is the MCP6022, a dual with rail-to-rail input and output. It
   runs from 2.5 V to 5.5 V, has a gain bandwidth product of 10 MHz and an
@@ -188,11 +188,16 @@ global labels.
   (Microchip DS20001685E, front page and section 1.0).
 - Input impedance around 100 kΩ, so the difference in rig output impedance
   (4.7 k to 10 kΩ) can be ignored.
-- A fixed gain of 3 covers both the FTDX10 and Icom rigs. With the FTDX10
-  this only reaches about −11 dBFS, so a switch to 8–10× makes better use of
-  the ADC's effective resolution.
-- Overvoltage protection: series resistor + clamp to the supply rails
-  (BAT54S or similar).
+- A trimmer in the feedback path sets the gain between 3 and 23, so the level
+  is adjusted once per rig without changing parts. A gain of 3 covers both
+  the FTDX10 and Icom rigs, but with the FTDX10 it only reaches about
+  −11 dBFS; 8–10× makes better use of the ADC's effective resolution, and
+  twice that if the transformer is loaded with 10 kΩ.
+- Overvoltage protection: a series resistor, then two BAT43 Schottky diodes
+  in DO-35 that clamp the op-amp input to the supply rails. The BAT43
+  withstands 30 V, leaks at most 0.5 µA at 25 V, drops 0.26 V to 0.33 V at
+  2 mA and has 7 pF at 1 V (BAT42 / BAT43 datasheet,
+  `akizukidenshi.com/goodsaffix/bat43.pdf`).
 - A transformer isolates the AF input from the rig. With the optocouplers on
   FSK and PTT, no conductor then joins the rig's ground to the USB ground, so
   no ground loop forms and RF common-mode current on transmit has no path
@@ -315,7 +320,6 @@ version and source location, datasheet section, manual page) under it.
 
 - The pin assignment. The Tiny 2350 exposes few GPIOs. Decide whether to keep
   3–4 pins free for I2S in addition to FSK, PTT and the ADC input.
-- How to switch the gain (jumper or trimmer).
 - The load on the transformer secondary. 10 kΩ matches the transformer but
   halves the level from a 10 kΩ rig output; around 100 kΩ keeps the level but
   may peak at the high end. Measure both on the prototype.
