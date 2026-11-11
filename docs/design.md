@@ -431,9 +431,20 @@ version and source location, datasheet section, manual page) under it.
   input.
 - [ ] 4. Whether the `embassy-rp` ADC can capture continuously without gaps
   through DMA.
-- [ ] 5. How `CdcAcmClass` in `embassy-usb` reports DTR changes and
+- [x] 5. How `CdcAcmClass` in `embassy-usb` reports DTR changes and
   SEND_BREAK, to tell when the PC has closed the port and to offer an abort
   that does not travel through the bulk pipe.
+  - DTR and RTS: `embassy-usb` 0.6.0 `src/class/cdc_acm.rs` stores both on
+    SET_CONTROL_LINE_STATE in `control_out`. `split_with_control` returns a
+    `ControlChanged`, whose `control_changed` waits for a change and whose
+    `dtr` reads the state. SET_LINE_CODING sets the same change flag, so a
+    change of DTR is found by comparing it with its previous state.
+  - SEND_BREAK: not handled. `control_out` rejects requests it does not
+    know, and the ACM functional descriptor gives `bmCapabilities` 0x02,
+    which does not announce Send_Break. An abort through SEND_BREAK needs a
+    CDC ACM class of our own.
+  - DTR and RTS reach the firmware only as these flags, so opening the port
+    resets nothing.
 - [x] 6. The board's exposed GPIOs, and filtering of the ADC's analog supply
   and reference.
   - Pico 2: 26 GPIOs on the headers, three of them ADC inputs; ADC_AVDD is
@@ -459,6 +470,11 @@ version and source location, datasheet section, manual page) under it.
   is erased, and what that does to the USB audio stream and the FSK output.
 - [ ] 10. How the firmware reboots the RP2350 into BOOTSEL mode with
   `embassy-rp`.
+- [ ] 11. Whether the host asserts DTR when it opens the control port and
+  drops it when it closes the port, also when a program exits without
+  closing it: Windows `usbser.sys`, Linux `cdc_acm`, Tera Term and pyserial.
+  Whether ModemManager probes the port, whose interface protocol is 0x00
+  (`cdc_acm.rs`, `CDC_PROTOCOL_NONE`).
 
 ## 8. Undecided
 
@@ -483,7 +499,16 @@ version and source location, datasheet section, manual page) under it.
   `tinyfsk.fsk` can drive it from MMTTY. The TinyFSK protocol has not been
   checked against its documentation, nor whether it fits the framing in
   `control-port.md`.
-- What happens to a transmission in progress when the PC closes the control
-  port, and whether a DTR drop or SEND_BREAK aborts it.
+- What the firmware does when the PC opens and closes the control port.
+  SEND_BREAK is not available with the `CdcAcmClass` of `embassy-usb`
+  (check 5), so DTR is what tells. The proposals, which rest on check 11:
+  - When DTR rises, discard the line being assembled, so that what a
+    previous session left half typed does not join the first command. An
+    empty line would not help: it runs what was left.
+  - Let Ctrl-U (0x15) discard that line too, for a program to send first.
+  - Discard output while DTR is low, so that opening the port does not
+    deliver stale logs. A program that never asserts DTR then gets no output.
+  - When DTR falls, abort the transmission and release PTT, so that a
+    program that dies does not leave PTT keyed.
 - The license of the hardware design files. pid.codes requires one once
   they are in the repository (see "USB VID / PID").

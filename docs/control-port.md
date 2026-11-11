@@ -114,3 +114,17 @@ is keyed or the queue is not empty.
   with `ERR`.
 - `STATUS` reports the free space, so that a program sending much data can
   wait for room instead of waiting for `ERR`.
+
+## Opening and Closing the Port
+
+- Opening the port resets nothing. An Arduino Uno resets because DTR is
+  wired through a capacitor to its reset pin. Here DTR and RTS reach the
+  firmware only as flags (check 5 in `design.md`), and the firmware ignores
+  the line coding, so the convention of resetting on a 1200 baud open does
+  not apply either. Neither line keys PTT.
+- Output toward the PC passes through a bounded buffer, and lines that do
+  not fit are dropped. Writing to the endpoint waits until the host has
+  taken the previous packet, and a host that is not reading must not stop
+  command handling or transmission.
+- What the firmware does on DTR changes is undecided; the proposals are
+  under "Undecided" in `design.md`.
