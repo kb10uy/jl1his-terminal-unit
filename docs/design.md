@@ -110,13 +110,14 @@ connected with `embassy-sync` Channel / Signal.
 
 ### FSK Transmit
 
-- A PIO state machine generates 5 data bits + 1.5 stop bits.
+- A PIO state machine generates each character with the data bits set by
+  `SET BITS` (5 to 8) and the stop bits set by `SET STOP` (1, 1.5 or 2).
 - The baud rate is set by a control command, so 45.45 baud is given exactly.
   The firmware ignores the line coding of the control port.
 - A transmit command carries text. The firmware converts it to Baudot and
   inserts the LTRS / FIGS shifts. The conversion lives in `core` and is
   tested on the host.
-- The FSK transmit task takes Baudot codes and PTT requests from a queue and
+- The FSK transmit task takes code words and PTT requests from a queue and
   does not know what filled it. The command parser is the only source now; a
   raw port could be added later as a second one without changing the task.
 - PTT is keyed and released by commands. A release takes effect only after
@@ -165,17 +166,80 @@ program. There is no binary mode.
   leaves the mode and releases PTT once the queue has been sent in full.
   Ctrl-C aborts as in any mode.
 
-### Control Commands (candidates; the command set is not designed yet)
+### Control Commands
 
-- Transmit text
-- Enter keyboard mode
-- PTT on / off
-- Abort the transmission and discard the queue
-- Baud rate
-- Invert FSK polarity
-- PTT delay
-- Status query
-- Digital gain
+A command is its name, a space and its arguments. `TX` takes the rest of the
+line after that space as it is. "While transmitting" below means while PTT
+is keyed or the queue is not empty.
+
+| Command | Action |
+|---|---|
+| `TX <text>` | Queue text, converted as described in "Transmit Text" |
+| `SEND <hex>` | Queue code words without conversion, two hexadecimal digits per word |
+| `PTT ON` | Key PTT |
+| `PTT OFF` | Release PTT once the queue has been sent in full |
+| `KEY` | Enter keyboard mode |
+| `ABORT` | Abort as Ctrl-C does |
+| `SET <name> <value>` | Change a setting at once. It is not stored until `SAVE` |
+| `GET <name>` | Reply `OK <value>` |
+| `GET` | Reply every setting on one line, `OK NAME=value ...` |
+| `STATUS` | Reply on one line, `OK NAME=value ...`: PTT, mode, queued and free bytes (`FREE`) |
+| `SAVE` | Store the settings in flash. Refused with `ERR` while transmitting |
+| `DEFAULTS` | Set every setting to its default. It is not stored until `SAVE` |
+| `VER` | Reply the firmware version |
+| `BOOTSEL` | Reboot into BOOTSEL mode for flashing |
+| `HELP` | List the commands |
+
+- `SEND` writes data as hexadecimal rather than raw bytes, so it stays a
+  line of text: Ctrl-C keeps working, no line end can be mistaken for data,
+  a tty that is not in raw mode or XON / XOFF flow control cannot alter it,
+  and a sender that stops halfway leaves no parser waiting. Doubling the
+  length costs nothing at RTTY speeds.
+- `SEND` takes no length; the number of digits gives it. An odd number of
+  digits, or a word that does not fit in `BITS`, is answered with `ERR`.
+  With `BITS 5` it sends raw Baudot codes, leaving the shifts to the PC,
+  which suits an `.fsk` add-on; with `BITS 8` it sends 8-bit data.
+
+### Settings
+
+| Name | Values | Meaning |
+|---|---|---|
+| `BAUD` | decimal, such as `45.45` | Baud rate |
+| `BITS` | `5` to `8` | Data bits |
+| `STOP` | `1`, `1.5`, `2` | Stop bits |
+| `INVERT` | `ON`, `OFF` | Invert the FSK polarity |
+| `TXDELAY` | milliseconds | Mark sent after PTT is keyed, before the first character |
+| `TXTAIL` | milliseconds | Wait after the last character before PTT is released |
+| `DIDDLE` | `OFF`, `LTRS` | Hold mark, or send LTRS, while PTT is keyed and the queue is empty |
+| `USOS` | `ON`, `OFF` | Unshift on space: send FIGS again after a space before figures |
+| `CODE` | `ITA2`, `US` | The figures table, which differs in `$`, `'`, BEL and others |
+| `TOT` | seconds, `OFF` | Abort and release PTT after transmitting this long |
+| `GAIN` | to be defined | Digital gain of the UAC microphone |
+
+- `DIDDLE`, `USOS` and `CODE` apply to Baudot, with `BITS 5`, only.
+- Settings are stored in flash only by `SAVE`, so that trying values neither
+  wears the flash nor keeps them. At power-up the stored settings are
+  loaded. They carry a format version and a CRC; settings that fail either
+  check are replaced by the defaults.
+- `SAVE` is refused while transmitting because XIP stops while the flash is
+  erased, which may disturb the USB audio stream and the refilling of the
+  FSK output (unverified).
+
+### Limits
+
+- A command line holds up to 16 KB (16384 bytes), not counting its end. A
+  longer line is not run: the rest of it up to its end is discarded and it is
+  answered with one `ERR`. Running a truncated line could pass a different
+  value, such as `SET BAUD 45.4`.
+- The transmit queue holds 8 KB (8192 code words). A `TX` or `SEND` that
+  does not fit is answered with `ERR` and nothing of it is queued. `SEND`
+  fits a 16 KB line with room for about 8 KB of data. `TX` can need up to
+  twice as many codes as characters because of the inserted shifts. At
+  45.45 baud, 8192 characters take about 22 minutes.
+- In keyboard mode a character that does not fit is dropped and answered
+  with `ERR`.
+- `STATUS` reports the free space, so that a program sending much data can
+  wait for room instead of waiting for `ERR`.
 
 ### Audio
 
@@ -497,6 +561,10 @@ version and source location, datasheet section, manual page) under it.
     adjustment, and IC-7300 ACC specifications, are recorded in section 4.
     FTDX10 numerical AF and keying specifications and other Icom models
     still need checking.
+- [ ] 9. How `embassy-rp` writes the flash, whether XIP stops while a sector
+  is erased, and what that does to the USB audio stream and the FSK output.
+- [ ] 10. How the firmware reboots the RP2350 into BOOTSEL mode with
+  `embassy-rp`.
 
 ## 8. Undecided
 
@@ -507,11 +575,19 @@ version and source location, datasheet section, manual page) under it.
 - The load on the transformer secondary. 10 kΩ matches the transformer but
   halves the level from a 10 kΩ rig output; around 100 kΩ keeps the level but
   may peak at the high end. Measure both on the prototype.
-- The control command set: the command names and their syntax, and the tags
-  of the lines sent toward the PC. Also whether it follows the TinyFSK
-  protocol so that the existing `tinyfsk.fsk` can drive the unit from MMTTY.
-  The TinyFSK protocol has not been checked against its documentation, nor
-  whether it fits the framing in "Control Port Framing".
+- The tags of the lines the control port sends toward the PC.
+- Whether `TX` while PTT is released only queues the text until `PTT ON`
+  and `TXDELAY` have passed. That is the proposal, so that text can be
+  queued before keying.
+- What `TX` does with `BITS` other than 5. The proposal is to send ASCII
+  codes as they are, without upper-casing, with 7 or 8 bits, and to answer
+  `ERR` with 6.
+- Whether a `PARITY` setting is needed for 7- and 8-bit transfers.
+- The default of every setting, in particular `TOT`, and the scale of `GAIN`.
+- Whether the unit also follows the TinyFSK protocol, so that the existing
+  `tinyfsk.fsk` can drive it from MMTTY. The TinyFSK protocol has not been
+  checked against its documentation, nor whether it fits the framing in
+  "Control Port Framing".
 - What happens to a transmission in progress when the PC closes the control
   port, and whether a DTR drop or SEND_BREAK aborts it.
 - The license of the hardware design files. pid.codes requires one once
