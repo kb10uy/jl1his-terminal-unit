@@ -140,8 +140,13 @@ the Baudot conversion live in `core` behind it and are tested on the host.
 - `status` reports whether PTT is keyed and how many words are queued and
   free.
 
-`FskKeyer` in `firmware/app/src/keyer.rs` implements it: it holds the
-8192-word queue and follows `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`.
+`terminal_unit_core::keyer::Sequencer` implements it and holds the queue.
+Its `step` takes the time in milliseconds and decides what the transmit task
+does next: stay idle, send a word, or hold a level for a time or until woken,
+following `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`. It also reports when PTT
+is keyed, released or cut off by `TOT`, so the decisions are tested on the
+host. `FskKeyer` in `firmware/app/src/keyer.rs` wraps it with an 8192-word
+queue, wakes the transmit task on every call and logs the reported events.
 `FskOutput` and `PttOutput`, in `keyer/output.rs`, own the PIO state machines
 that drive the FSK and PTT pins. `SAVE` goes through the
 `Storage` trait, which the firmware answers with an error until check 9 is
@@ -198,7 +203,9 @@ done.
   the fault handlers release it the same way as the FSK pin.
 - An abort, and `TOT` expiring, stop the state machine at once, also in the
   middle of a character: the task disables it, forces the pin low, empties
-  the FIFO and restarts the program.
+  the FIFO and restarts the program. The task clears a pending abort before
+  each decision, so an abort that arrives while it is idle cannot cut short
+  the `TXDELAY` of a `PTT ON` that follows at once.
 - The control port never stops reading because the transmit queue is full.
   A transmit command that does not fit is answered with an error, so that an
   abort never waits behind queued text.
