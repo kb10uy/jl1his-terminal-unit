@@ -2,6 +2,7 @@ mod command;
 mod error;
 mod executor;
 mod line;
+mod reply;
 #[cfg(test)]
 mod tests;
 
@@ -10,6 +11,7 @@ use core::fmt::Write;
 use error::Error;
 use executor::Executor;
 use line::{LineBuffer, LineTooLong};
+use reply::Reply;
 
 const ETX: u8 = 0x03;
 const BEL: u8 = 0x07;
@@ -95,15 +97,14 @@ impl<const LINE: usize, const WORDS: usize> Controller<LINE, WORDS> {
             (ETX, _) => {
                 self.line.clear();
                 self.executor.abort(keyer);
-                ok(out);
-                Ok(None)
+                Ok(Some(Reply::Ok))
             }
             (b'\n', _) if after_cr => Ok(None),
-            (_, Mode::Keyboard) => self.executor.keyboard(byte, keyer, out).map(|()| None),
+            (_, Mode::Keyboard) => self.executor.keyboard(byte, keyer),
             (b'\r' | b'\n', Mode::Command) => {
                 let result = match self.line.contents() {
                     Ok([]) => Ok(None),
-                    Ok(line) => self.executor.run(line, keyer, storage, out),
+                    Ok(line) => self.executor.run(line, keyer, storage).map(Some),
                     Err(LineTooLong) => Err(Error::LineTooLong),
                 };
                 self.line.clear();
@@ -118,13 +119,16 @@ impl<const LINE: usize, const WORDS: usize> Controller<LINE, WORDS> {
                 Ok(None)
             }
         };
-        result.unwrap_or_else(|error| {
-            let _ = write!(out, "ERR {error}\r\n");
-            None
-        })
+        match result {
+            Ok(None) => None,
+            Ok(Some(reply)) => {
+                let _ = write!(out, "{reply}\r\n");
+                matches!(reply, Reply::Bootsel).then_some(Action::Bootsel)
+            }
+            Err(error) => {
+                let _ = write!(out, "ERR {error}\r\n");
+                None
+            }
+        }
     }
-}
-
-fn ok(out: &mut impl Write) {
-    let _ = out.write_str("OK\r\n");
 }

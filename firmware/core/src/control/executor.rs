@@ -1,14 +1,14 @@
 use super::{
-    Action, BEL, BS, DEL, Keyer, Mode, SUB, SaveError, Storage,
+    BEL, BS, DEL, Keyer, Mode, SUB, SaveError, Storage,
     command::{self, Command},
     error::Error,
-    ok,
+    reply::Reply,
 };
 use crate::{
     baudot::{Encoder, Words},
     settings::{Setting, Settings},
 };
-use core::{fmt::Write, iter, slice};
+use core::{iter, slice};
 
 struct Unescape<'a>(slice::Iter<'a, u8>);
 
@@ -57,19 +57,18 @@ impl<const WORDS: usize> Executor<WORDS> {
         &mut self,
         byte: u8,
         keyer: &mut impl Keyer,
-        out: &mut impl Write,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Reply<'static>>, Error> {
         match byte {
             SUB => {
                 self.mode = Mode::Command;
                 keyer.ptt_off();
-                ok(out);
-                Ok(())
+                return Ok(Some(Reply::Ok));
             }
-            BS | DEL => Ok(()),
-            b'\r' | b'\n' => self.queue_text(keyer, b"\r\n".iter().copied().map(Ok)),
-            _ => self.queue_text(keyer, iter::once(Ok(byte))),
+            BS | DEL => {}
+            b'\r' | b'\n' => self.queue_text(keyer, b"\r\n".iter().copied().map(Ok))?,
+            _ => self.queue_text(keyer, iter::once(Ok(byte)))?,
         }
+        Ok(None)
     }
 
     pub(super) fn run(
@@ -77,8 +76,7 @@ impl<const WORDS: usize> Executor<WORDS> {
         line: &[u8],
         keyer: &mut impl Keyer,
         storage: &mut impl Storage,
-        out: &mut impl Write,
-    ) -> Result<Option<Action>, Error> {
+    ) -> Result<Reply<'_>, Error> {
         match command::parse(line)? {
             Command::Tx(text) => self.queue_text(keyer, Unescape(text.iter()))?,
             Command::Send(hex) => self.send(hex, keyer)?,
@@ -99,33 +97,9 @@ impl<const WORDS: usize> Executor<WORDS> {
                 }
                 keyer.apply(&self.settings);
             }
-            Command::Get(Some(setting)) => {
-                let _ = write!(out, "OK {}\r\n", self.settings.value(setting));
-                return Ok(None);
-            }
-            Command::Get(None) => {
-                let _ = out.write_str("OK");
-                for setting in Setting::ALL {
-                    let _ = write!(out, " {}={}", setting.name(), self.settings.value(setting));
-                }
-                let _ = out.write_str("\r\n");
-                return Ok(None);
-            }
-            Command::Status => {
-                let status = keyer.status();
-                let mode = match self.mode {
-                    Mode::Command => "COMMAND",
-                    Mode::Keyboard => "KEYBOARD",
-                };
-                let _ = write!(
-                    out,
-                    "OK PTT={} MODE={mode} QUEUED={} FREE={}\r\n",
-                    switch(status.ptt),
-                    status.queued,
-                    status.free
-                );
-                return Ok(None);
-            }
+            Command::Get(Some(setting)) => return Ok(Reply::Value(self.settings.value(setting))),
+            Command::Get(None) => return Ok(Reply::Settings(&self.settings)),
+            Command::Status => return Ok(Reply::Status(keyer.status(), self.mode)),
             Command::Save => {
                 if keyer.status().transmitting() {
                     return Err(Error::Transmitting);
@@ -139,26 +113,14 @@ impl<const WORDS: usize> Executor<WORDS> {
                 self.encoder.reset();
                 keyer.apply(&self.settings);
             }
-            Command::Ver => {
-                let _ = write!(out, "OK {}\r\n", self.version);
-                return Ok(None);
-            }
+            Command::Ver => return Ok(Reply::Version(self.version)),
             Command::Bootsel => {
                 keyer.abort();
-                ok(out);
-                return Ok(Some(Action::Bootsel));
+                return Ok(Reply::Bootsel);
             }
-            Command::Help => {
-                let _ = out.write_str("OK");
-                for name in command::NAMES {
-                    let _ = write!(out, " {name}");
-                }
-                let _ = out.write_str("\r\n");
-                return Ok(None);
-            }
+            Command::Help => return Ok(Reply::Help),
         }
-        ok(out);
-        Ok(None)
+        Ok(Reply::Ok)
     }
 
     fn require_baudot(&self) -> Result<(), Error> {
@@ -214,8 +176,4 @@ fn hex_digit(digit: u8) -> Result<u8, Error> {
         .to_digit(16)
         .map(|value| value as u8)
         .ok_or(Error::BadArgument)
-}
-
-fn switch(on: bool) -> &'static str {
-    if on { "ON" } else { "OFF" }
 }
