@@ -6,7 +6,7 @@ use embassy_rp::{
     pac,
     peripherals::PIO0,
     pio::{
-        Config, Direction, Irq, IrqFlags, Pin, Pio, PioPin, ShiftDirection, StateMachine,
+        Common, Config, Direction, Irq, IrqFlags, Pin, Pio, PioPin, ShiftDirection, StateMachine,
         program::{
             InstructionOperands, MovDestination, MovOperation, MovSource, SetDestination, pio_asm,
         },
@@ -36,6 +36,64 @@ const MOV_Y_OSR: u16 = InstructionOperands::MOV {
 pub fn release_on_fault() {
     pac::PIO0.ctrl().write(|w| w.set_sm_enable(0));
     pac::PIO0.sm(0).instr().write(|w| w.set_instr(SET_PINS_LOW));
+    pac::PIO0.sm(1).instr().write(|w| w.set_instr(SET_PINS_LOW));
+}
+
+pub fn outputs<'d>(
+    pio: Pio<'d, PIO0>,
+    fsk_pin: Peri<'d, impl PioPin>,
+    ptt_pin: Peri<'d, impl PioPin>,
+    active_low: bool,
+) -> (FskOutput<'d>, PttOutput<'d>) {
+    let Pio {
+        mut common,
+        irq_flags,
+        irq0,
+        irq1,
+        sm0,
+        sm1,
+        ..
+    } = pio;
+    let ptt = PttOutput::new(&mut common, sm1, ptt_pin, active_low);
+    let fsk = FskOutput::new(&mut common, sm0, irq_flags, irq0, irq1, fsk_pin, active_low);
+    (fsk, ptt)
+}
+
+fn output_pin<'d, const SM: usize>(
+    common: &mut Common<'d, PIO0>,
+    sm: &mut StateMachine<'d, PIO0, SM>,
+    pin: Peri<'d, impl PioPin>,
+    active_low: bool,
+) -> Pin<'d, PIO0> {
+    let mut pin = common.make_pio_pin(pin);
+    pin.set_output_inversion(active_low);
+    sm.set_pins(Level::Low, &[&pin]);
+    sm.set_pin_dirs(Direction::Out, &[&pin]);
+    pin
+}
+
+pub struct PttOutput<'d> {
+    sm: StateMachine<'d, PIO0, 1>,
+    pin: Pin<'d, PIO0>,
+}
+
+impl<'d> PttOutput<'d> {
+    fn new(
+        common: &mut Common<'d, PIO0>,
+        mut sm: StateMachine<'d, PIO0, 1>,
+        pin: Peri<'d, impl PioPin>,
+        active_low: bool,
+    ) -> Self {
+        let pin = output_pin(common, &mut sm, pin, active_low);
+        let mut config = Config::default();
+        config.set_set_pins(&[&pin]);
+        sm.set_config(&config);
+        Self { sm, pin }
+    }
+
+    pub(super) fn set(&mut self, keyed: bool) {
+        self.sm.set_pins(Level::from(keyed), &[&self.pin]);
+    }
 }
 
 pub struct FskOutput<'d> {
@@ -51,15 +109,15 @@ pub struct FskOutput<'d> {
 }
 
 impl<'d> FskOutput<'d> {
-    pub fn new(pio: Pio<'d, PIO0>, pin: Peri<'d, impl PioPin>, active_low: bool) -> Self {
-        let Pio {
-            mut common,
-            irq_flags,
-            irq0,
-            irq1,
-            mut sm0,
-            ..
-        } = pio;
+    fn new(
+        common: &mut Common<'d, PIO0>,
+        mut sm0: StateMachine<'d, PIO0, 0>,
+        irq_flags: IrqFlags<'d, PIO0>,
+        started: Irq<'d, PIO0, 0>,
+        finished: Irq<'d, PIO0, 1>,
+        pin: Peri<'d, impl PioPin>,
+        active_low: bool,
+    ) -> Self {
         let program = pio_asm!(
             ".wrap_target",
             "    pull block",
@@ -74,10 +132,7 @@ impl<'d> FskOutput<'d> {
             ".wrap",
         );
         let program = common.load_program(&program.program);
-        let mut pin = common.make_pio_pin(pin);
-        pin.set_output_inversion(active_low);
-        sm0.set_pins(Level::Low, &[&pin]);
-        sm0.set_pin_dirs(Direction::Out, &[&pin]);
+        let pin = output_pin(common, &mut sm0, pin, active_low);
 
         let mut config = Config::default();
         config.use_program(&program, &[]);
@@ -89,8 +144,8 @@ impl<'d> FskOutput<'d> {
 
         Self {
             sm: sm0,
-            started: irq0,
-            finished: irq1,
+            started,
+            finished,
             irq_flags,
             pin,
             origin: program.origin,

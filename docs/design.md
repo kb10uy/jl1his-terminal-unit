@@ -4,8 +4,9 @@ Decisions from the design discussion. Items marked "unverified" come from
 memory and have not been checked against source code, datasheets or manuals.
 
 Implemented so far: the UAC microphone, which streams a test tone, the
-control port, and FSK keying from a PIO state machine, whose output is the
-on-board LED until the rig interface is wired. PTT is only logged.
+control port, and FSK and PTT keying on the pins of the rig interface,
+driven through PIO0, and the status LED. The receive AF from the ADC is
+not implemented yet.
 
 ## 1. Purpose
 
@@ -28,16 +29,20 @@ USB device with:
   `pip-assets.raspberrypi.com/categories/1005-raspberry-pi-pico-2/documents/RP-008299-DS-3-pico-2-datasheet.pdf`.
 - On-board LED: GPIO 25, active high (pico-sdk
   `src/boards/include/boards/pico2.h` sets `PICO_DEFAULT_LED_PIN` to 25 and
-  does not define `PICO_DEFAULT_LED_PIN_INVERTED`). For now it is the output
-  pin of the FSK keyer: dark while nothing is transmitted and lit whenever
-  the FSK optocoupler would be on. There is no heartbeat.
-- Tiny 2350: the Cargo feature `tiny2350` moves the FSK output to the green
-  element of that board's RGB LED on GPIO 19, which is active low (Pimoroni
-  product page, `shop.pimoroni.com/products/tiny-2350`; pico-sdk
-  `src/boards/include/boards/pimoroni_tiny2350.h`). `FskOutput::new` takes
-  the polarity of the pin and inverts the pad output
+  does not define `PICO_DEFAULT_LED_PIN_INVERTED`). The firmware does not
+  use it.
+- Tiny 2350: its headers do not expose GPIO 16 and 17, so the Cargo feature
+  `tiny2350` moves the FSK output to the green element of that board's RGB
+  LED on GPIO 19, PTT to the red element on GPIO 18 and the status LED to
+  the blue element on GPIO 20. The LED is active low (Pimoroni product page, `shop.pimoroni.com/products/tiny-2350`); the
+  pins are `TINY2350_LED_G_PIN`, `TINY2350_LED_R_PIN` and
+  `TINY2350_LED_B_PIN` in pico-sdk
+  `src/boards/include/boards/pimoroni_tiny2350.h`. `keyer::outputs` takes
+  the polarity of the pins and inverts the pad outputs
   (`Pin::set_output_inversion`, `embassy-rp` 0.10.0 `src/pio/mod.rs`), so
-  the state machine and the fault handlers stay the same.
+  the state machines and the fault handlers stay the same. The status LED
+  is inverted the same way with `Output::set_inversion`
+  (`src/gpio.rs`).
 - Chip stepping: not known until the Pico 2 is at hand. The Tiny 2350 is
   marked RP2350A0A2, stepping A2, which erratum RP2350-E9 affects. The design
   keeps the E9 workarounds either way.
@@ -133,8 +138,8 @@ the Baudot conversion live in `core` behind it and are tested on the host.
 
 `FskKeyer` in `firmware/app/src/keyer.rs` implements it: it holds the
 8192-word queue and follows `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`.
-`FskOutput`, in `keyer/output.rs`, owns the PIO state machine that drives the
-FSK pin. PTT has no pin yet and is logged over defmt. `SAVE` goes through the
+`FskOutput` and `PttOutput`, in `keyer/output.rs`, own the PIO state machines
+that drive the FSK and PTT pins. `SAVE` goes through the
 `Storage` trait, which the firmware answers with an error until check 9 is
 done.
 
@@ -182,6 +187,11 @@ done.
   queue is empty. The task sets that level with an executed `SET` while the
   state machine is stopped. `DIDDLE LTRS` sends LTRS only with `BITS 5`;
   otherwise the pin holds mark.
+- PTT is GPIO 16, driven by state machine 1 of PIO0, which runs no program.
+  The transmit task sets the pin with an executed `SET` after each decision:
+  high from the moment PTT is keyed, before `TXDELAY`, until it is released
+  after `TXTAIL` or by an abort. The PIO drives it, rather than SIO, so that
+  the fault handlers release it the same way as the FSK pin.
 - An abort, and `TOT` expiring, stop the state machine at once, also in the
   middle of a character: the task disables it, forces the pin low, empties
   the FIFO and restarts the program.
@@ -190,19 +200,21 @@ done.
   abort never waits behind queued text.
 - `firmware/app/src/fault.rs` holds the panic handler and the HardFault
   handler. Both first disable the state machines of PIO0 and force the FSK
-  pin low through the registers, without the driver. The panic handler then
-  prints the message over defmt and raises a HardFault with `udf`, as
-  `panic-probe` did (panic-probe 1.0.0 `src/lib.rs`), which it replaces.
-  Once PTT has a pin, both handlers release it too. A reset returns the pin
-  to its high-impedance default, and the external pull-down holds the
-  optocoupler off.
+  and PTT pins low through the registers, without the driver, with a `SET`
+  written to `SM0_INSTR` and `SM1_INSTR`. The `SET` pins of state machine 1
+  are the PTT pin from its configuration on. The panic handler then prints
+  the message over defmt and raises a HardFault with `udf`, as `panic-probe`
+  did (panic-probe 1.0.0 `src/lib.rs`), which it replaces. A reset returns
+  the pins to their high-impedance default, and the external pull-downs
+  hold the optocouplers off.
 - Checked in `embassy-rp` 0.10.0 `src/pio/mod.rs`: `Common::make_pio_pin`
   selects the PIO function for the pin, after which SIO no longer drives it;
   `StateMachine::set_pins` and `set_pin_dirs` pause the state machine and
   execute `SET` instructions; `set_tx_threshold` rewrites the pull
   threshold alone; `Irq::wait` completes on the PIO interrupt flag and
-  clears it. `PIN_25` implements `PioPin`. None of this has run on hardware
-  yet.
+  clears it; `set_pins` restores `PINCTRL` afterwards, so the `SET` pins
+  from `set_config` stay. `PIN_16` to `PIN_19` implement `PioPin`. None of
+  this has run on hardware yet.
 
 ### Control Port
 
@@ -376,8 +388,13 @@ join only inside the Pico 2.
   Q1, so they light exactly while the optocouplers are driven and need no
   firmware. They go dark with every path that forces the pins low, and D5
   flickers with the data.
-- D3 is on GPIO 15 and only the firmware lights it. What it shows is
-  undecided (section 8).
+- D3 is on GPIO 15 and only the firmware lights it, through SIO. For now it
+  blinks at 2 Hz until the host has configured the device and stays lit
+  once it has; what it should show is still open (section 8).
+  `firmware/app/src/status.rs` registers an `embassy-usb` `Handler`, which
+  reports `configured`, and takes a bus reset or the device being disabled
+  as not configured, since `embassy-usb` 0.6.0 does not call
+  `configured(false)` on either (`src/lib.rs`).
 - The current is about 1.4 mA, assuming VF = 1.9 V, so use high-efficiency
   LEDs with VF around 2 V. An InGaN green or blue LED, with VF around 3 V,
   would barely light from 3.3 V.
@@ -550,7 +567,8 @@ only its conventions are listed here.
 ## 8. Undecided
 
 - What the status LED (D3) shows. The proposal is to blink it while the host
-  has not configured the device and to keep it lit once it has.
+  has not configured the device and to keep it lit once it has, which the
+  firmware does for now.
 - The pins kept for an external I2S ADC. GPIO 18 to 21 are four consecutive
   free pins and are the proposal.
 - Whether to hold GPIO 23 high for PWM mode, filter the op-amp supply or fit

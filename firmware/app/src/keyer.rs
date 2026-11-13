@@ -1,6 +1,6 @@
 mod output;
 
-pub use output::{FskOutput, release_on_fault};
+pub use output::{FskOutput, PttOutput, outputs, release_on_fault};
 
 use core::{
     cell::RefCell,
@@ -45,9 +45,12 @@ impl FskKeyer {
         }
     }
 
-    pub async fn run(&self, mut output: FskOutput<'_>) -> ! {
+    pub async fn run(&self, mut output: FskOutput<'_>, mut ptt: PttOutput<'_>) -> ! {
         loop {
-            let completed = match self.with(|state| state.step(Instant::now())) {
+            let (step, keyed) =
+                self.with(|state| (state.step(Instant::now()), state.keyed_at.is_some()));
+            ptt.set(keyed);
+            let completed = match step {
                 Step::Idle => {
                     output.release();
                     self.aborted.reset();
