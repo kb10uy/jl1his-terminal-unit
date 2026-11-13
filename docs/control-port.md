@@ -96,7 +96,6 @@ not empty.
 | `USOS` | `ON`, `OFF` | `ON` | Unshift on space: send FIGS again after a space before figures |
 | `CODE` | `ITA2`, `US` | `ITA2` | The figures table, which differs in `$`, `'`, BEL and others |
 | `TOT` | seconds, `1` to `65535`, `OFF` | `600` | Abort and release PTT after transmitting this long |
-| `GAIN` | to be defined | to be defined | Digital gain of the UAC microphone. Not implemented yet |
 
 - Setting names and keyword values are not case-sensitive. `GET` shows
   keywords in upper case and `BAUD` without trailing zeros.
@@ -167,4 +166,7 @@ FIGS where the shift changes. Both figures tables share `-` `?` `:` `(` `)`
   not fit are dropped. Writing to the endpoint waits until the host has
   taken the previous packet, and a host that is not reading must not stop
   command handling or transmission.
-- What the firmware does on DTR changes is undecided.
+- The firmware does nothing on DTR changes for now. Closing the port
+  neither discards the line being assembled nor aborts the transmission, so
+  a program sends Ctrl-C or `PTT OFF` before it closes the port. `TOT`
+  releases PTT left keyed by a program that dies.

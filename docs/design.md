@@ -90,6 +90,10 @@ USB device with:
   transmit through an `.fsk` add-on on the PC that translates to the command
   protocol, as JA7UDE's `tinyfsk.fsk` does for TinyFSK
   (https://www.qsl.net/ja7ude/tinyfsk/index.html). None is planned yet.
+- The firmware does nothing when DTR changes (`control-port.md`, "Opening
+  and Closing the Port"). Discarding the half-typed line when DTR rises,
+  discarding output while it is low and aborting when it falls were
+  considered and set aside for now.
 
 ### License
 
@@ -234,6 +238,8 @@ The protocol of the control port, its commands, settings and limits, is in
   clock.
 - Samples pass through an interface boundary inside the firmware, so that an
   external I2S ADC (such as the PCM1808) can replace the internal ADC later.
+- There is no digital gain. The full scale of the ADC maps to full scale of
+  the 16-bit stream, and the level is set only with RV1.
 
 ### UAC Microphone
 
@@ -269,8 +275,8 @@ of the ADC.
 ## 4. Analog Circuits
 
 The schematic is `hardware/terminal-unit.kicad_sch`, drawn with KiCad 10. Its
-component values are starting points for the prototype, not decisions. The
-Pico 2 is on the sheet as A1, and global labels join it to the circuits.
+circuits and component values are final. The Pico 2 is on the sheet as A1,
+and global labels join it to the circuits.
 
 The USB side has two ground nets. GNDA carries the grounds of the receive AF
 stage and of the op-amp supply and returns to AGND on pin 33. GND carries
@@ -291,8 +297,9 @@ join only inside the Pico 2.
   density 8.7 nV/√Hz at 10 kHz, output to within 15 mV of ground and 20 mV
   of the supply into 10 kΩ (Microchip DS20001685E, front page and section
   1.0).
-- R4 loads the transformer secondary with 10 kΩ for now. The value is
-  undecided (section 8).
+- R4 loads the transformer secondary with 10 kΩ, matching the transformer.
+  This halves the level from a 10 kΩ rig output, which the gain of RV1
+  makes up.
 - The trimmer RV1, a Bourns 3296W in the feedback path, sets the gain
   between 3 and 23, so the level is adjusted once per rig without changing
   parts. This is the midband AC gain; R11 and C7 make the DC gain unity.
@@ -365,10 +372,8 @@ join only inside the Pico 2.
 - The GPIO drives the base through 4.7 kΩ (R12 / R13). The base current is
   about 0.55 mA at 3.3 V and 0.41 mA at the GPIO's 2.62 V floor, assuming
   VBE = 0.7 V. The hFE minimum of 70 is specified at VCE = 6 V and
-  IC = 2 mA and does not establish saturation at the present load. A
-  proposal is to reduce R12 / R13 to 1 kΩ and configure the GPIO drive
-  strength to 8 mA, giving a forced gain around 5–10 for the estimated
-  LED load. This still needs verification with the purchased transistor.
+  IC = 2 mA and does not establish saturation at the present load.
+  R12 / R13 stay at 4.7 kΩ and the GPIOs at their default drive strength.
   The two LED branches together draw about 27 mA from 3V3. Each GPIO
   supplies about 2 mA to the base and to R8 / R9, and its indicator LED
   takes about 1.4 mA more (see "Status LEDs").
@@ -399,8 +404,9 @@ join only inside the Pico 2.
   LEDs with VF around 2 V. An InGaN green or blue LED, with VF around 3 V,
   would barely light from 3.3 V.
 - GPIO 16 and 17 then supply about 3.5 mA each. This is within the 4 mA of
-  the default drive strength (unverified), and the 8 mA proposed above
-  leaves more margin.
+  the default drive strength (unverified).
+- On the prototype, D3 to D5 work as described here (checked by the user on
+  2026-11-13).
 
 ### Connector
 
@@ -488,9 +494,9 @@ only its conventions are listed here.
   frame period, core supply switching and coupling from digital circuits.
   These may show as lines in the PC's waterfall.
 - On the Pico 2 the 3V3 rail, and with it the ADC reference and the op-amp
-  supply, carries the ripple of a switching regulator. Measure with GPIO 23
-  low and high, and decide from the result whether to hold it high, filter
-  the op-amp supply or fit an external reference.
+  supply, carries the ripple of a switching regulator. The circuit stays as
+  it is: GPIO 23 stays low, the regulator in PFM mode, and there is no
+  filter on the op-amp supply and no external reference.
 - Evaluation: once the ADC feeds USB Audio, record on the PC and look at an
   FFT. Measure the noise floor and spurs with no signal, and SINAD with a
   sine wave near full scale.
@@ -571,32 +577,15 @@ only its conventions are listed here.
   firmware does for now.
 - The pins kept for an external I2S ADC. GPIO 18 to 21 are four consecutive
   free pins and are the proposal.
-- Whether to hold GPIO 23 high for PWM mode, filter the op-amp supply or fit
-  an external ADC reference. Decide after measuring the ADC noise.
-- The load on the transformer secondary. 10 kΩ matches the transformer but
-  halves the level from a 10 kΩ rig output; around 100 kΩ keeps the level but
-  may peak at the high end. Measure both on the prototype.
 - The tags of the lines the control port sends toward the PC
   (`control-port.md`).
 - What `TX` does with `BITS` other than 5. For now it is answered with
   `ERR`. The proposal is to send ASCII codes as they are, without
   upper-casing, with 7 or 8 bits, and to answer `ERR` with 6.
 - Whether a `PARITY` setting is needed for 7- and 8-bit transfers.
-- The scale and default of `GAIN`.
 - Whether the unit also follows the TinyFSK protocol, so that the existing
   `tinyfsk.fsk` can drive it from MMTTY. The TinyFSK protocol has not been
   checked against its documentation, nor whether it fits the framing in
   `control-port.md`.
-- What the firmware does when the PC opens and closes the control port.
-  SEND_BREAK is not available with the `CdcAcmClass` of `embassy-usb`
-  (check 5), so DTR is what tells. The proposals, which rest on check 11:
-  - When DTR rises, discard the line being assembled, so that what a
-    previous session left half typed does not join the first command. An
-    empty line would not help: it runs what was left.
-  - Let Ctrl-U (0x15) discard that line too, for a program to send first.
-  - Discard output while DTR is low, so that opening the port does not
-    deliver stale logs. A program that never asserts DTR then gets no output.
-  - When DTR falls, abort the transmission and release PTT, so that a
-    program that dies does not leave PTT keyed.
 - The license of the hardware design files. pid.codes requires one once
   they are in the repository.
