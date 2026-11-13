@@ -51,7 +51,8 @@ USB device with:
 - Pin assignment: the receive AF goes to GPIO 26 (ADC0, pin 31), FSK comes
   from GPIO 17 (pin 22) and PTT from GPIO 16 (pin 21). GPIO 26 sits beside
   AGND, and GPIO 16 and 17 sit at the end of the board next to a GND pin,
-  which keeps the wiring of the perfboard layout short.
+  which keeps the wiring of the perfboard layout short. GPIO 15 (pin 20),
+  across the board from GPIO 16, drives the status LED.
 - Power: 3V3 comes from an RT6150 buck-boost switching regulator. The
   datasheet recommends keeping external loads on the 3V3 pin under 300 mA.
   With GPIO 23 low, the default, the regulator runs in PFM mode; driving it
@@ -356,14 +357,33 @@ join only inside the Pico 2.
   proposal is to reduce R12 / R13 to 1 kΩ and configure the GPIO drive
   strength to 8 mA, giving a forced gain around 5–10 for the estimated
   LED load. This still needs verification with the purchased transistor.
-  The two LED branches together draw about 27 mA from 3V3, and each GPIO
-  supplies about 2 mA.
+  The two LED branches together draw about 27 mA from 3V3. Each GPIO
+  supplies about 2 mA to the base and to R8 / R9, and its indicator LED
+  takes about 1.4 mA more (see "Status LEDs").
 - So that nothing transmits right after power-up or while pins are
   undefined, R8 / R9 pull each GPIO to ground through 2.2 kΩ, which holds
   the transistor and so the LED off. 2.2 kΩ is well under the 8.2 kΩ limit
   of the E9 workaround.
 - KiCad's 2SC1815 symbol numbers the pins emitter, collector, base. Check
   the pin order of the purchased part against its own datasheet.
+
+### Status LEDs
+
+- Three LEDs show the state of the unit: D3 (green) the status, D4 (red)
+  PTT and D5 (yellow) FSK. Each runs from its GPIO through 1 kΩ (R14 to R16)
+  to GND.
+- D4 hangs on GPIO 16 and D5 on GPIO 17, beside the base resistors of Q2 and
+  Q1, so they light exactly while the optocouplers are driven and need no
+  firmware. They go dark with every path that forces the pins low, and D5
+  flickers with the data.
+- D3 is on GPIO 15 and only the firmware lights it. What it shows is
+  undecided (section 8).
+- The current is about 1.4 mA, assuming VF = 1.9 V, so use high-efficiency
+  LEDs with VF around 2 V. An InGaN green or blue LED, with VF around 3 V,
+  would barely light from 3.3 V.
+- GPIO 16 and 17 then supply about 3.5 mA each. This is within the 4 mA of
+  the default drive strength (unverified), and the 8 mA proposed above
+  leaves more margin.
 
 ### Connector
 
@@ -416,6 +436,10 @@ only its conventions are listed here.
   library footprint does not, so that DRC treats them as joined inside the
   module.
 - Where pads sit in adjacent holes DRC reports overlapping courtyards.
+- The status LEDs stand in column 26 at the edge of the gap, at the end of
+  the Pico away from the USB connector. Their cathodes join the GND of the
+  drivers in column 23. Column 21 has no pads in rows 23 and 24, where the
+  antenna keepout of the Pico footprint reaches beyond the module.
 - Two footprints rest on assumptions. `ST-78_Leads_Perfboard` takes the body
   of T1 as 16.5 mm by 20 mm, read from the dimension table of the ST
   catalogue without its drawing, and puts the lead holes where the layout
@@ -525,6 +549,8 @@ only its conventions are listed here.
 
 ## 8. Undecided
 
+- What the status LED (D3) shows. The proposal is to blink it while the host
+  has not configured the device and to keep it lit once it has.
 - The pins kept for an external I2S ADC. GPIO 18 to 21 are four consecutive
   free pins and are the proposal.
 - Whether to hold GPIO 23 high for PWM mode, filter the op-amp supply or fit
