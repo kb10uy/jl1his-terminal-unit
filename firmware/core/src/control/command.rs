@@ -1,11 +1,37 @@
-use crate::settings::Setting;
+use crate::settings::{Setting, parse_keyword};
 
-pub const NAMES: [&str; 13] = [
-    "TX", "SEND", "PTT", "KEY", "ABORT", "SET", "GET", "STATUS", "SAVE", "DEFAULTS", "VER",
-    "BOOTSEL", "HELP",
+#[derive(Clone, Copy)]
+pub(super) enum Name {
+    Tx,
+    Send,
+    Ptt,
+    Key,
+    Abort,
+    Set,
+    Get,
+    Status,
+    Save,
+    Defaults,
+    Ver,
+    Bootsel,
+    Help,
+}
+
+pub(super) const NAMES: [(&str, Name); 13] = [
+    ("TX", Name::Tx),
+    ("SEND", Name::Send),
+    ("PTT", Name::Ptt),
+    ("KEY", Name::Key),
+    ("ABORT", Name::Abort),
+    ("SET", Name::Set),
+    ("GET", Name::Get),
+    ("STATUS", Name::Status),
+    ("SAVE", Name::Save),
+    ("DEFAULTS", Name::Defaults),
+    ("VER", Name::Ver),
+    ("BOOTSEL", Name::Bootsel),
+    ("HELP", Name::Help),
 ];
-
-const MAX_NAME_LEN: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command<'a> {
@@ -36,21 +62,12 @@ pub fn parse(line: &[u8]) -> Result<Command<'_>, ParseError> {
         Some(space) => (&line[..space], &line[space + 1..]),
         None => (line, &[][..]),
     };
-    let mut upper = [0; MAX_NAME_LEN];
-    let upper = upper
-        .get_mut(..name.len())
-        .ok_or(ParseError::UnknownCommand)?;
-    upper.copy_from_slice(name);
-    upper.make_ascii_uppercase();
-
-    if *upper == *b"TX" {
-        return Ok(Command::Tx(rest));
-    }
-
+    let name = parse_keyword(name, &NAMES).ok_or(ParseError::UnknownCommand)?;
     let mut args = rest.split(|&b| b == b' ').filter(|arg| !arg.is_empty());
-    let command = match &*upper {
-        b"SEND" => Command::Send(args.next().unwrap_or_default()),
-        b"PTT" => {
+    let command = match name {
+        Name::Tx => return Ok(Command::Tx(rest)),
+        Name::Send => Command::Send(args.next().unwrap_or_default()),
+        Name::Ptt => {
             let state = args.next().ok_or(ParseError::BadArgument)?;
             if state.eq_ignore_ascii_case(b"ON") {
                 Command::Ptt(true)
@@ -60,20 +77,19 @@ pub fn parse(line: &[u8]) -> Result<Command<'_>, ParseError> {
                 return Err(ParseError::BadArgument);
             }
         }
-        b"KEY" => Command::Key,
-        b"ABORT" => Command::Abort,
-        b"SET" => {
+        Name::Key => Command::Key,
+        Name::Abort => Command::Abort,
+        Name::Set => {
             let setting = setting(args.next().ok_or(ParseError::BadArgument)?)?;
             Command::Set(setting, args.next().ok_or(ParseError::BadArgument)?)
         }
-        b"GET" => Command::Get(args.next().map(setting).transpose()?),
-        b"STATUS" => Command::Status,
-        b"SAVE" => Command::Save,
-        b"DEFAULTS" => Command::Defaults,
-        b"VER" => Command::Ver,
-        b"BOOTSEL" => Command::Bootsel,
-        b"HELP" => Command::Help,
-        _ => return Err(ParseError::UnknownCommand),
+        Name::Get => Command::Get(args.next().map(setting).transpose()?),
+        Name::Status => Command::Status,
+        Name::Save => Command::Save,
+        Name::Defaults => Command::Defaults,
+        Name::Ver => Command::Ver,
+        Name::Bootsel => Command::Bootsel,
+        Name::Help => Command::Help,
     };
     match args.next() {
         Some(_) => Err(ParseError::BadArgument),

@@ -181,7 +181,7 @@ fn parse_tot(text: &[u8]) -> Option<Option<NonZeroU16>> {
     }
 }
 
-fn parse_keyword<T: Copy>(text: &[u8], keywords: &[(&str, T)]) -> Option<T> {
+pub(crate) fn parse_keyword<T: Copy>(text: &[u8], keywords: &[(&str, T)]) -> Option<T> {
     keywords
         .iter()
         .find(|(keyword, _)| text.eq_ignore_ascii_case(keyword.as_bytes()))

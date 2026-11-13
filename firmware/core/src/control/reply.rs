@@ -36,7 +36,7 @@ impl fmt::Display for Reply<'_> {
             Reply::Version(version) => write!(f, " {version}"),
             Reply::Help => command::NAMES
                 .into_iter()
-                .try_for_each(|name| write!(f, " {name}")),
+                .try_for_each(|(name, _)| write!(f, " {name}")),
         }
     }
 }
