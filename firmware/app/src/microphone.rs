@@ -3,12 +3,10 @@ use embassy_usb::{
     descriptor::{SynchronizationType, UsageType},
     driver::{Driver, Endpoint, EndpointError, EndpointIn},
 };
-
-pub const SAMPLE_RATE_HZ: u32 = 48_000;
-pub const SAMPLES_PER_FRAME: usize = (SAMPLE_RATE_HZ / 1_000) as usize;
+use terminal_unit_core::audio::{MAX_FRAME_SAMPLES, SAMPLE_RATE_HZ};
 
 const BYTES_PER_SAMPLE: usize = 2;
-const MAX_PACKET_SIZE: usize = (SAMPLES_PER_FRAME + 1) * BYTES_PER_SAMPLE;
+const MAX_PACKET_SIZE: usize = MAX_FRAME_SAMPLES * BYTES_PER_SAMPLE;
 
 const AUDIO: u8 = 0x01;
 const AUDIOCONTROL: u8 = 0x01;

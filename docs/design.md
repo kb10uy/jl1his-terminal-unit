@@ -3,10 +3,10 @@
 Decisions from the design discussion. Items marked "unverified" come from
 memory and have not been checked against source code, datasheets or manuals.
 
-Implemented so far: the UAC microphone, which streams a test tone, the
-control port, and FSK and PTT keying on the pins of the rig interface,
-driven through PIO0, and the status LED. The receive AF from the ADC is
-not implemented yet.
+Implemented so far: the UAC microphone, which streams the receive AF from
+the ADC, the control port, FSK and PTT keying on the pins of the rig
+interface, driven through PIO0, and the status LED. The ADC path has not
+run on hardware yet.
 
 ## 1. Purpose
 
@@ -229,15 +229,42 @@ The protocol of the control port, its commands, settings and limits, is in
 
 - The ADC is free-running, paced by its internal clock divider and read
   through DMA. No software timer triggers conversions.
-- The ADC clock is 48 MHz. Both 48 kHz (÷1000) and 192 kHz (÷250) are
-  integer divisions.
-- Oversample at 192 kHz or more and low-pass filter before decimating to
-  48 kHz. The analog RC alone does not provide enough rejection for direct
-  48 kHz capture.
+- The ADC clock is 48 MHz, from PLL_USB like the USB clock, in the default
+  clock configuration of `embassy-rp` 0.10.0 (`src/clocks.rs`). Both 48 kHz
+  (÷1000) and 192 kHz (÷250) are integer divisions. The ADC samples at
+  192 kHz, with `DIV.INT` 249, since the period is 1 + `INT` clock cycles.
+- `firmware/app/src/capture.rs` sets the ADC and DMA channel 0 up through
+  the registers. `embassy-rp` claims the peripherals and the pin; its
+  `read_many` cannot be used, since it stops the conversions at the end of
+  every buffer (check 4). The channel copies each 12-bit result from the
+  ADC FIFO into a 4 KiB ring of 2048 half words, aligned to its size, with
+  the write address wrapped by `RING_SIZE` 12 and `TRANS_COUNT` in
+  `ENDLESS` mode, which neither decrements the count nor raises interrupts
+  (`rp-pac` 7.0.0 `src/rp235x/dma/regs.rs`). The ring holds about 10.7 ms.
+  The firmware reads the channel's `WRITE_ADDR` to find how far the ADC
+  has written.
+- `terminal_unit_core::audio::Decimator` subtracts the midscale, 2048,
+  filters with a 61-tap FIR in Q15 and keeps every fourth sample. The taps
+  are a windowed sinc with a Kaiser window, β = 6.755, cut off at 17 kHz
+  for a passband to 10 kHz and a stopband from 24 kHz with 70 dB of
+  attenuation. The host tests check the passband to within 0.05 dB at the
+  RTTY tones and 10 kHz, and at least 60 dB of rejection at 24 kHz and at
+  the frequencies that would fold onto 2125 Hz. The output is shifted so
+  that the full scale of the ADC is the full scale of the 16-bit stream,
+  rounded and saturated. `core` is built with `opt-level` 3 in the dev
+  profile as well, so that the filter keeps up in a debug build.
 - The UAC capture endpoint is asynchronous and sends samples on the device's
-  clock.
+  clock. The ADC and USB both run from PLL_USB, so the sample rate is exact
+  on the device's clock, and only the host's frame clock differs from it.
+  The audio task keeps a backlog of about 2 ms, 96 samples, between the ADC
+  and the packets: each packet carries 48 samples, 49 when the backlog
+  exceeds the target by more than 12, and 47 when it falls short by more
+  than 12 (`audio::packet_len`). When the stream starts, or the backlog
+  exceeds 192 samples, the read position is set back to 2 ms behind the
+  ADC.
 - Samples pass through an interface boundary inside the firmware, so that an
   external I2S ADC (such as the PCM1808) can replace the internal ADC later.
+  The boundary is `Capture`: `resync`, `pending` and `read`.
 - There is no digital gain. The full scale of the ADC maps to full scale of
   the 16-bit stream, and the level is set only with RV1.
 
@@ -255,12 +282,10 @@ The protocol of the control port, its commands, settings and limits, is in
   48 kHz.
 - Isochronous IN endpoint, asynchronous, `bInterval` 1. `wMaxPacketSize` is
   98 bytes (49 samples), so that the device clock can send an extra sample
-  in some frames once the ADC paces the stream. The endpoint descriptor has
-  no sampling frequency control.
-- Until the ADC path exists, the stream carries a 1 kHz sine at −6 dBFS from
-  `terminal_unit_core::tone::Sine`, 48 samples per packet. Each write waits
-  until the host has taken the previous packet, so the host's frame clock
-  paces it.
+  in some frames. The endpoint descriptor has no sampling frequency
+  control.
+- Each write waits until the host has taken the previous packet, so the
+  host's frame clock paces the packets, and the backlog sets their length.
 
 ### Stages
 
@@ -518,10 +543,18 @@ only its conventions are listed here.
   - `write` flips the data PID on every packet, also for isochronous
     endpoints, where full-speed USB uses DATA0 only. Check on hardware that
     the host accepts the stream.
-- [ ] 3. Whether the `embassy-rp` ADC pin initialization disables the digital
+- [x] 3. Whether the `embassy-rp` ADC pin initialization disables the digital
   input.
-- [ ] 4. Whether the `embassy-rp` ADC can capture continuously without gaps
+  - Yes. `embassy-rp` 0.10.0 `src/adc.rs` `Channel::new_pin` clears `IE`,
+    sets `OD` and clears `ISO` in the pad control register, and sets the
+    pulls from its `Pull` argument; the firmware passes `Pull::None`.
+    Dropping the channel enables the input again.
+- [x] 4. Whether the `embassy-rp` ADC can capture continuously without gaps
   through DMA.
+  - No. `read_many` and its variants in `src/adc.rs` clear `START_MANY`,
+    wait until the ADC is ready and disable the FIFO once the buffer is
+    full, so consecutive calls leave a gap. The firmware drives the ADC and
+    a DMA channel in `ENDLESS` mode itself (see "Audio").
 - [x] 5. How `CdcAcmClass` in `embassy-usb` reports DTR changes and
   SEND_BREAK, to tell when the PC has closed the port and to offer an abort
   that does not travel through the bulk pipe.

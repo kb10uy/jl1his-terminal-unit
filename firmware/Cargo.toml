@@ -9,5 +9,8 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 publish = false
 
+[profile.dev.package.terminal-unit-core]
+opt-level = 3
+
 [profile.release]
 debug = true

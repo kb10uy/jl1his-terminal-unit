@@ -1,13 +1,15 @@
 #![no_std]
 #![no_main]
 
+mod capture;
 mod control;
 mod fault;
 mod keyer;
 mod microphone;
 mod status;
 
-use defmt::info;
+use capture::{Capture, Ring};
+use defmt::{info, warn};
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_futures::join::join5;
@@ -27,9 +29,12 @@ use embassy_usb::{
     class::cdc_acm::{CdcAcmClass, State},
 };
 use keyer::FskKeyer;
-use microphone::{Microphone, SAMPLE_RATE_HZ, SAMPLES_PER_FRAME};
+use microphone::Microphone;
 use status::{Configured, UsbState};
-use terminal_unit_core::{settings::Settings, tone::Sine};
+use terminal_unit_core::{
+    audio::{MAX_FRAME_SAMPLES, packet_len},
+    settings::Settings,
+};
 
 #[unsafe(link_section = ".bi_entries")]
 #[used]
@@ -48,9 +53,6 @@ bind_interrupts!(struct Irqs {
 const USB_VID: u16 = 0x1209;
 const USB_PID: u16 = 0x0002;
 
-const TEST_TONE_HZ: u32 = 1_000;
-const TEST_TONE_AMPLITUDE: f32 = 0.5;
-
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
@@ -63,6 +65,8 @@ async fn main(_spawner: Spawner) {
     status_led.set_inversion(active_low);
     let (fsk_output, ptt_output) =
         keyer::outputs(Pio::new(p.PIO0, Irqs), fsk_pin, ptt_pin, active_low);
+    let ring = cortex_m::singleton!(: Ring = Ring::new()).unwrap();
+    let mut capture = Capture::new(p.ADC, p.PIN_26, p.DMA_CH0, ring);
 
     let mut usb_config = Config::new(USB_VID, USB_PID);
     usb_config.product = Some("JL1HIS RTTY Terminal Unit");
@@ -87,13 +91,18 @@ async fn main(_spawner: Spawner) {
     let mut usb_device = builder.build();
 
     let audio = async {
-        let mut tone = Sine::new(TEST_TONE_HZ, SAMPLE_RATE_HZ, TEST_TONE_AMPLITUDE);
-        let mut samples = [0; SAMPLES_PER_FRAME];
+        let mut samples = [0; MAX_FRAME_SAMPLES];
         loop {
             microphone.wait_enabled().await;
+            capture.resync();
             loop {
-                samples.fill_with(|| tone.next_sample());
-                if microphone.write_samples(&samples).await.is_err() {
+                let Some(len) = packet_len(capture.pending()) else {
+                    warn!("audio: capture overrun");
+                    capture.resync();
+                    continue;
+                };
+                capture.read(&mut samples[..len]);
+                if microphone.write_samples(&samples[..len]).await.is_err() {
                     break;
                 }
             }
