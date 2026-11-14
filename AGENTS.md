@@ -17,9 +17,11 @@ work.
 - `firmware/` is a Cargo workspace. `firmware/core/` (`terminal-unit-core`)
   is a `no_std` library without platform dependencies, tested on the host.
   `firmware/app/` (`terminal-unit-firmware`) is the RP2350 binary.
-- `hardware/` holds the KiCad 10 project of the rig interface.
+- `hardware/circuit/` holds the KiCad 10 project of the rig interface.
   `terminal-unit.kicad_pcb` is a parts layout for a 2.54 mm universal board,
   not a board to be fabricated.
+- `hardware/enclosure/` holds the FreeCAD model of the case. Its dimensions
+  live in the `Params` spreadsheet of the file.
 - embassy changes its APIs between releases. Check each API against the
   source or docs.rs of the version locked in `Cargo.lock` rather than writing
   it from memory.

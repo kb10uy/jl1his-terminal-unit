@@ -306,7 +306,8 @@ of the ADC.
 
 ## 4. Analog Circuits
 
-The schematic is `hardware/terminal-unit.kicad_sch`, drawn with KiCad 10. Its
+The schematic is `hardware/circuit/terminal-unit.kicad_sch`, drawn with
+KiCad 10. Its
 circuits and component values are final. The Pico 2 is on the sheet as A1,
 and global labels join it to the circuits.
 
@@ -472,10 +473,11 @@ join only inside the Pico 2.
 
 ### Perfboard Layout
 
-`hardware/terminal-unit.kicad_pcb` is not a board to be fabricated. It
-records the prototype as it is built on a universal board, with the Pico 2
-in sockets on the same board. The file holds the placement; only its
-conventions are listed here.
+`hardware/circuit/terminal-unit.kicad_pcb` is not a board to be fabricated.
+It records the prototype as it is built on a universal board, with the
+Pico 2 H soldered to the same board by its headers, without sockets
+(reported by the user on 2026-11-14). The file holds the placement; only
+its conventions are listed here.
 
 - The board is the AE-B2_TH, 95 mm by 72 mm, with 960 plated holes of
   1.0 mm on a 2.54 mm grid and four mounting holes of 3.2 mm, 3.0 mm in
@@ -511,6 +513,48 @@ conventions are listed here.
   has them. `MiniDIN6_Breakout_SIP8` assumes that the breakout board
   extends equally beyond both end pins (unverified). Its two G pads carry
   pad number 2, so that they take the net of the jack's ground pin.
+- The file draws the body of T1 over the mounting hole in its corner. On
+  the prototype that hole is free (reported by the user on 2026-11-14), so
+  the body sits a little off where it is drawn.
+
+### Enclosure
+
+`hardware/enclosure/terminal-unit.FCStd` is the case, drawn with FreeCAD
+1.1. It is a draft and has not been printed.
+
+- The case has two halves that meet at the component side of the board, and
+  measures 100.8 mm by 93.8 mm by 30.6 mm. The bottom carries the board on
+  four bosses under its mounting holes, which take M3 self-tapping screws
+  from above. The lid has the opening for the USB receptacle of the Pico 2
+  in one end wall, the opening for the mini-DIN jack in the other, and
+  three holes of 3.2 mm above D3 to D5.
+- The labels STATUS, PTT and KEY are engraved 0.6 mm deep beside the holes
+  of D3, D4 and D5, with capitals 3.5 mm high. They are set in Arial Bold,
+  which the file reads from `C:/Windows/Fonts/arialbd.ttf` when a label is
+  recomputed.
+- Four M3 screws from below join the halves through posts in the corners.
+  The posts stand in 8 mm of room in front of and behind the board, so no
+  part on the board has to make way for them and the connectors stay at
+  the walls.
+- The `Params` spreadsheet holds every dimension, and the shapes follow it
+  through expressions. The positions of the openings come from the perfboard
+  layout, with X and Y measured from the corner of the board beside pin 1
+  of the Pico 2.
+- The heights of the two connectors above the board are assumed, not
+  measured (unverified). `usb_z` is 4.8 mm to the centre of the USB
+  receptacle: the 2.5 mm spacer of the headers of the Pico 2 H, its 1.0 mm
+  board and half the receptacle. `din_z` is 10.5 mm to the centre of the
+  jack: a 2.5 mm spacer, the 1.6 mm conversion board (Akizuki AE-MiniDIN-6)
+  and 6.5 mm. The 1.6 mm of `board_t` is assumed as well. Measure all three
+  on the prototype before printing.
+- Both openings are cut from both halves. The USB opening starts 0.8 mm
+  above the board, so it notches the overlap of the bottom as well as the
+  wall of the lid.
+- The 20 mm of `headroom` clears T1, whose case CB-19 measures 15.5 mm by
+  20 mm by 16.5 mm (ST series catalogue, dimension table).
+- The `Reference` group holds the board and blocks for the parts that set
+  the openings and the height. They show the assumptions and are not for
+  printing.
 
 ## 5. Working Around RP2350-E9 (Stepping A2)
 
