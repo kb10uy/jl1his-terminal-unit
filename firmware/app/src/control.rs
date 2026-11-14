@@ -1,7 +1,7 @@
 use crate::keyer::{FskKeyer, QUEUE_WORDS};
-use core::fmt;
+use core::{cell::RefCell, fmt};
 use defmt::info;
-use embassy_futures::join::join;
+use embassy_futures::join::join3;
 use embassy_rp::rom_data::reset_to_usb_boot;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, pipe::Pipe};
 use embassy_time::{Duration, Timer, with_timeout};
@@ -30,14 +30,17 @@ impl Storage for NoStorage {
 pub async fn run<'d, D: Driver<'d>>(
     class: CdcAcmClass<'d, D>,
     settings: Settings,
-    mut keyer: &FskKeyer,
+    keyer: &FskKeyer,
 ) {
-    let (mut sender, mut receiver) = class.split();
+    let (mut sender, mut receiver, lines) = class.split_with_control();
     let output = Output::new();
-    let mut controller =
-        Controller::<LINE_BYTES, QUEUE_WORDS>::new(settings, env!("CARGO_PKG_VERSION"));
+    let controller = RefCell::new(Controller::<LINE_BYTES, QUEUE_WORDS>::new(
+        settings,
+        env!("CARGO_PKG_VERSION"),
+    ));
 
     let commands = async {
+        let mut keyer = keyer;
         let mut packet = [0; MAX_PACKET_SIZE as usize];
         let mut reply = Reply::new();
         loop {
@@ -46,7 +49,10 @@ pub async fn run<'d, D: Driver<'d>>(
             while let Ok(len) = receiver.read_packet(&mut packet).await {
                 for &byte in &packet[..len] {
                     reply.clear();
-                    let action = controller.feed(byte, &mut keyer, &mut NoStorage, &mut reply);
+                    let action =
+                        controller
+                            .borrow_mut()
+                            .feed(byte, &mut keyer, &mut NoStorage, &mut reply);
                     if let Some(line) = reply.line()
                         && line.len() <= output.free_capacity()
                     {
@@ -73,7 +79,20 @@ pub async fn run<'d, D: Driver<'d>>(
         }
     };
 
-    join(commands, replies).await;
+    let hang_up = async {
+        let mut keyer = keyer;
+        let mut dtr = false;
+        loop {
+            lines.control_changed().await;
+            let was = core::mem::replace(&mut dtr, lines.dtr());
+            if was && !dtr {
+                info!("control port: DTR off, aborting");
+                controller.borrow_mut().abort(&mut keyer);
+            }
+        }
+    };
+
+    join3(commands, replies, hang_up).await;
 }
 
 async fn reboot_to_bootsel(output: &Output) {

@@ -167,6 +167,19 @@ fn ctrl_c_aborts_at_once_and_discards_the_line(mut unit: Unit) {
 }
 
 #[rstest]
+#[case(b"TX AB")]
+#[case(b"KEY\rAB")]
+#[case(b"VER\r")]
+fn abort_discards_the_line_and_leaves_keyboard_mode(mut unit: Unit, #[case] input: &[u8]) {
+    unit.feed(input);
+    unit.take_events();
+    unit.controller.abort(&mut unit.keyer);
+    assert_eq!(unit.take_events(), vec![Event::Abort]);
+    assert_eq!(unit.controller.mode(), Mode::Command);
+    assert_eq!(unit.feed(b"\nVER\r"), VER);
+}
+
+#[rstest]
 fn queues_text_with_shifts_and_resync(mut unit: Unit) {
     assert_eq!(unit.feed(b"TX cq\rTX  de\rTX 599\r"), "OK\r\n".repeat(3));
     assert_eq!(
