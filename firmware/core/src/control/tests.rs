@@ -1,4 +1,4 @@
-use super::{Action, Controller, Keyer, Mode, QueueFull, SaveError, Storage, TxStatus};
+use super::{Action, Controller, Keyer, LastTx, Mode, QueueFull, SaveError, Storage, TxStatus};
 use crate::{
     baudot::{FIGS, LTRS},
     settings::{Baud, Settings},
@@ -19,6 +19,8 @@ struct MockKeyer {
     queued: usize,
     capacity: usize,
     ptt: bool,
+    sent: u32,
+    last_tx: LastTx,
 }
 
 impl Keyer for MockKeyer {
@@ -56,6 +58,8 @@ impl Keyer for MockKeyer {
             ptt: self.ptt,
             queued: self.queued,
             free: self.capacity - self.queued,
+            sent: self.sent,
+            last_tx: self.last_tx,
         }
     }
 }
@@ -116,6 +120,8 @@ fn unit() -> Unit {
             queued: 0,
             capacity: 64,
             ptt: false,
+            sent: 0,
+            last_tx: LastTx::None,
         },
         storage: MockStorage {
             result: Ok(()),
@@ -228,6 +234,11 @@ fn follows_the_code_and_usos_settings(mut unit: Unit) {
 #[case(b"SEND 1g\r", "ERR bad argument\r\n", vec![])]
 #[case(b"SEND 0120\r", "ERR word does not fit BITS\r\n", vec![])]
 #[case(b"SET BITS 8\rSEND ff\r", "OK\r\nOK\r\n", vec![(vec![0xFF], None)])]
+#[case(b"SENDM 1001\r", "OK\r\n", vec![(vec![0x01, 0x10], None)])]
+#[case(b"SENDM 1b\r", "OK\r\n", vec![(vec![0x1B], None)])]
+#[case(b"SENDM 20\r", "ERR word does not fit BITS\r\n", vec![])]
+#[case(b"SET BITS 7\rSENDM 01\r", "OK\r\nOK\r\n", vec![(vec![0x40], None)])]
+#[case(b"SET BITS 8\rSENDM 01c5\r", "OK\r\nOK\r\n", vec![(vec![0x80, 0xA3], None)])]
 fn sends_code_words(
     mut unit: Unit,
     #[case] input: &[u8],
@@ -247,6 +258,7 @@ fn rejects_send_that_does_not_fit_the_queue(mut unit: Unit) {
 
 #[rstest]
 #[case(b"SEND 03\r")]
+#[case(b"SENDM 18\r")]
 #[case(b"SET BITS 5\r")]
 #[case(b"DEFAULTS\r")]
 fn forgets_the_shift(mut unit: Unit, #[case] input: &[u8]) {
@@ -370,12 +382,29 @@ fn reports_a_failed_save(mut unit: Unit) {
 fn reports_status(mut unit: Unit) {
     assert_eq!(
         unit.feed(b"STATUS\r"),
-        "OK PTT=OFF MODE=COMMAND QUEUED=0 FREE=64\r\n"
+        "OK PTT=OFF MODE=COMMAND QUEUED=0 FREE=64 SENT=0 LAST_TX=NONE\r\n"
     );
     unit.feed(b"PTT ON\rTX AB\r");
+    unit.keyer.sent = 7;
     assert_eq!(
         unit.feed(b"STATUS\r"),
-        "OK PTT=ON MODE=COMMAND QUEUED=3 FREE=61\r\n"
+        "OK PTT=ON MODE=COMMAND QUEUED=3 FREE=61 SENT=7 LAST_TX=NONE\r\n"
+    );
+}
+
+#[rstest]
+#[case(LastTx::Done, "DONE")]
+#[case(LastTx::Abort, "ABORT")]
+#[case(LastTx::Tot, "TOT")]
+fn reports_how_the_last_transmission_ended(
+    mut unit: Unit,
+    #[case] last_tx: LastTx,
+    #[case] name: &str,
+) {
+    unit.keyer.last_tx = last_tx;
+    assert_eq!(
+        unit.feed(b"STATUS\r"),
+        format!("OK PTT=OFF MODE=COMMAND QUEUED=0 FREE=64 SENT=0 LAST_TX={name}\r\n")
     );
 }
 
@@ -390,6 +419,6 @@ fn bootsel_aborts_and_requests_a_reboot(mut unit: Unit) {
 fn lists_commands(mut unit: Unit) {
     assert_eq!(
         unit.feed(b"HELP\r"),
-        "OK TX SEND PTT KEY ABORT SET GET STATUS SAVE DEFAULTS VER BOOTSEL HELP\r\n"
+        "OK TX SEND SENDM PTT KEY ABORT SET GET STATUS SAVE DEFAULTS VER BOOTSEL HELP\r\n"
     );
 }

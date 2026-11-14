@@ -1,6 +1,6 @@
 use crate::{
     baudot::LTRS,
-    control::{Keyer, QueueFull, TxStatus},
+    control::{Keyer, LastTx, QueueFull, TxStatus},
     fsk::mark_drive,
     settings::{DataBits, Diddle, Settings},
 };
@@ -33,6 +33,9 @@ pub struct Sequencer<const N: usize> {
     keyed_at_ms: Option<u64>,
     tail: bool,
     shift_lost: bool,
+    starting: bool,
+    sent: u32,
+    last_tx: LastTx,
 }
 
 impl<const N: usize> Sequencer<N> {
@@ -44,6 +47,9 @@ impl<const N: usize> Sequencer<N> {
             keyed_at_ms: None,
             tail: false,
             shift_lost: false,
+            starting: false,
+            sent: 0,
+            last_tx: LastTx::None,
         }
     }
 
@@ -62,7 +68,7 @@ impl<const N: usize> Sequencer<N> {
                 let limit_ms = u64::from(tot.get()) * 1_000;
                 let elapsed_ms = now_ms.saturating_sub(keyed_at_ms);
                 if elapsed_ms >= limit_ms {
-                    self.unkey();
+                    self.unkey(LastTx::Tot);
                     return (Step::Idle, Some(Event::Timeout));
                 }
                 Some(limit_ms - elapsed_ms)
@@ -71,6 +77,7 @@ impl<const N: usize> Sequencer<N> {
         };
         if let Some(word) = self.queue.pop_front() {
             self.tail = false;
+            self.starting = true;
             return (Step::Send(self.settings, word), None);
         }
         if self.ptt_requested {
@@ -89,15 +96,25 @@ impl<const N: usize> Sequencer<N> {
         self.tail = false;
         self.keyed_at_ms = None;
         self.shift_lost = true;
+        self.last_tx = LastTx::Done;
         (Step::Idle, Some(Event::PttOff))
     }
 
-    fn unkey(&mut self) {
+    pub fn started(&mut self) {
+        if core::mem::take(&mut self.starting) {
+            self.sent = self.sent.wrapping_add(1);
+        }
+    }
+
+    fn unkey(&mut self, ended: LastTx) {
+        if self.keyed_at_ms.take().is_some() {
+            self.last_tx = ended;
+        }
         self.queue.clear();
         self.ptt_requested = false;
-        self.keyed_at_ms = None;
         self.tail = false;
         self.shift_lost = true;
+        self.starting = false;
     }
 }
 
@@ -120,6 +137,10 @@ impl<const N: usize> Keyer for Sequencer<N> {
     }
 
     fn ptt_on(&mut self) {
+        if self.keyed_at_ms.is_none() {
+            self.sent = 0;
+            self.last_tx = LastTx::None;
+        }
         self.ptt_requested = true;
     }
 
@@ -128,7 +149,7 @@ impl<const N: usize> Keyer for Sequencer<N> {
     }
 
     fn abort(&mut self) {
-        self.unkey();
+        self.unkey(LastTx::Abort);
     }
 
     fn status(&self) -> TxStatus {
@@ -136,6 +157,8 @@ impl<const N: usize> Keyer for Sequencer<N> {
             ptt: self.keyed_at_ms.is_some(),
             queued: self.queue.len(),
             free: self.queue.capacity() - self.queue.len(),
+            sent: self.sent,
+            last_tx: self.last_tx,
         }
     }
 }
@@ -145,7 +168,7 @@ mod tests {
     use super::{Event, Sequencer, Step, Wait};
     use crate::{
         baudot::{FIGS, LTRS},
-        control::{Keyer, QueueFull, TxStatus},
+        control::{Keyer, LastTx, QueueFull, TxStatus},
         settings::{Setting, Settings},
     };
     use rstest::rstest;
@@ -185,7 +208,9 @@ mod tests {
             TxStatus {
                 ptt: false,
                 queued: 1,
-                free: QUEUE - 1
+                free: QUEUE - 1,
+                sent: 0,
+                last_tx: LastTx::None,
             }
         );
     }
@@ -275,7 +300,9 @@ mod tests {
             TxStatus {
                 ptt: false,
                 queued: 0,
-                free: QUEUE
+                free: QUEUE,
+                sent: 0,
+                last_tx: LastTx::Tot,
             }
         );
         assert_eq!(sequencer.step(2_000), (Step::Idle, None));
@@ -291,10 +318,59 @@ mod tests {
             TxStatus {
                 ptt: false,
                 queued: 0,
-                free: QUEUE
+                free: QUEUE,
+                sent: 0,
+                last_tx: LastTx::Abort,
             }
         );
         assert_eq!(sequencer.step(100), (Step::Idle, None));
+    }
+
+    #[test]
+    fn counts_the_queued_words_that_have_started() {
+        let mut sequencer = keyed(&[]);
+        sequencer.enqueue(&[0x03, 0x19], None).unwrap();
+        assert_eq!(sequencer.step(100), send(0x03));
+        assert_eq!(sequencer.status().sent, 0);
+        sequencer.started();
+        sequencer.started();
+        assert_eq!(sequencer.status().sent, 1);
+        assert_eq!(sequencer.step(200), send(0x19));
+        sequencer.started();
+        assert_eq!(sequencer.step(300), send(LTRS));
+        sequencer.started();
+        assert_eq!(sequencer.status().sent, 2);
+    }
+
+    #[test]
+    fn does_not_count_a_word_cut_off_before_it_started() {
+        let mut sequencer = keyed(&[]);
+        sequencer.enqueue(&[0x03], None).unwrap();
+        assert_eq!(sequencer.step(100), send(0x03));
+        sequencer.abort();
+        sequencer.started();
+        assert_eq!(sequencer.status().sent, 0);
+    }
+
+    #[test]
+    fn reports_a_transmission_sent_in_full_until_the_next_one() {
+        let mut sequencer = keyed(&[]);
+        sequencer.enqueue(&[0x03], None).unwrap();
+        sequencer.ptt_off();
+        assert_eq!(sequencer.step(100), send(0x03));
+        sequencer.started();
+        sequencer.step(200);
+        assert_eq!(sequencer.status().last_tx, LastTx::None);
+        sequencer.ptt_on();
+        assert_eq!(sequencer.status().sent, 1);
+        sequencer.ptt_off();
+        assert_eq!(sequencer.step(250), (Step::Idle, Some(Event::PttOff)));
+        sequencer.abort();
+        let status = sequencer.status();
+        assert_eq!((status.sent, status.last_tx), (1, LastTx::Done));
+        sequencer.ptt_on();
+        let status = sequencer.status();
+        assert_eq!((status.sent, status.last_tx), (0, LastTx::None));
     }
 
     #[test]

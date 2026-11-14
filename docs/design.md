@@ -137,15 +137,20 @@ the Baudot conversion live in `core` behind it and are tested on the host.
 - `ptt_on` keys PTT. Words queued while PTT is released wait for it and for
   `TXDELAY`. `ptt_off` releases PTT once the queue has been sent in full and
   `TXTAIL` has passed. `abort` discards the queue and releases PTT at once.
-- `status` reports whether PTT is keyed and how many words are queued and
-  free.
+- `status` reports whether PTT is keyed, how many words are queued and
+  free, how many queued words have started in this transmission and how the
+  latest transmission ended (`SENT` and `LAST_TX` in `control-port.md`).
 
 `terminal_unit_core::keyer::Sequencer` implements it and holds the queue.
 Its `step` takes the time in milliseconds and decides what the transmit task
 does next: stay idle, send a word, or hold a level for a time or until woken,
 following `TXDELAY`, `TXTAIL`, `DIDDLE` and `TOT`. It also reports when PTT
 is keyed, released or cut off by `TOT`, so the decisions are tested on the
-host. `FskKeyer` in `firmware/app/src/keyer.rs` wraps it with an 8192-word
+host. The transmit task calls its `started` when PIO interrupt flag 0
+reports that a character has begun, and the `Sequencer` counts it if the
+word of its latest step came from the queue. The count and the way the
+transmission ended change under the same lock as the PTT state, so one
+`STATUS` reply never mixes two states. `FskKeyer` in `firmware/app/src/keyer.rs` wraps it with an 8192-word
 queue, wakes the transmit task on every call and logs the reported events.
 `FskOutput` and `PttOutput`, in `keyer/output.rs`, own the PIO state machines
 that drive the FSK and PTT pins. `SAVE` goes through the

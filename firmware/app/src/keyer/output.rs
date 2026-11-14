@@ -188,7 +188,7 @@ impl<'d> FskOutput<'d> {
         self.while_stopped(|output| output.sm.set_pins(Level::from(drive), &[&output.pin]));
     }
 
-    pub(super) async fn send(&mut self, settings: &Settings, word: u8) {
+    pub(super) async fn send(&mut self, settings: &Settings, word: u8, on_start: impl FnOnce()) {
         let framing = Framing::new(settings, self.clock_hz);
         if self.framing != Some(framing) {
             self.settle().await;
@@ -208,6 +208,7 @@ impl<'d> FskOutput<'d> {
         self.sm.tx().wait_push(framing.frame(word)).await;
         self.busy = Some(self.duration(framing.ticks()));
         self.started.wait().await;
+        on_start();
         self.irq_flags.clear(1);
         Timer::after(self.duration(framing.ticks_before_stop())).await;
     }
