@@ -3,7 +3,7 @@
 	(generator "pcbnew")
 	(generator_version "8.0")
 	(layer "F.Cu")
-	(descr "Sansui ST-78 with flying leads, case CB-19, body 16.5 x 20 mm. The lead holes are where the perfboard layout wants them. Body size read from the catalogue table; check against the part.")
+	(descr "Sansui ST-78 with flying leads, case CB-19, body 20 x 16.5 mm as it lies on the board. The lead holes are where the prototype on the AE-B2 board has them. Body size read from the catalogue table; check against the part.")
 	(property "Reference" "REF**"
 		(at 0 -1.5 0)
 		(layer "F.SilkS")
@@ -26,8 +26,8 @@
 	)
 	(attr through_hole)
 	(fp_rect
-		(start -8.25 -10)
-		(end 8.25 10)
+		(start -10 -8.25)
+		(end 10 8.25)
 		(stroke
 			(width 0.12)
 			(type solid)
@@ -36,8 +36,8 @@
 		(layer "F.SilkS")
 	)
 	(fp_rect
-		(start -8.25 -10)
-		(end 8.25 10)
+		(start -10 -8.25)
+		(end 10 8.25)
 		(stroke
 			(width 0.1)
 			(type solid)
@@ -46,8 +46,8 @@
 		(layer "F.Fab")
 	)
 	(fp_rect
-		(start -8.5 -10.25)
-		(end 8.5 10.25)
+		(start -10.25 -8.5)
+		(end 10.25 8.5)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -56,31 +56,31 @@
 		(layer "F.CrtYd")
 	)
 	(pad "1" thru_hole circle
-		(at 8.89 15.24)
+		(at -1.27 11.43)
 		(size 1.6 1.6)
 		(drill 1)
 		(layers "*.Cu" "*.Mask")
 	)
 	(pad "2" thru_hole circle
-		(at 3.81 25.4)
+		(at -11.43 34.29)
 		(size 1.6 1.6)
 		(drill 1)
 		(layers "*.Cu" "*.Mask")
 	)
 	(pad "3" thru_hole circle
-		(at -19.05 2.54)
+		(at -31.75 -1.27)
 		(size 1.6 1.6)
 		(drill 1)
 		(layers "*.Cu" "*.Mask")
 	)
 	(pad "4" thru_hole circle
-		(at -19.05 7.62)
+		(at -31.75 3.81)
 		(size 1.6 1.6)
 		(drill 1)
 		(layers "*.Cu" "*.Mask")
 	)
 	(pad "5" thru_hole circle
-		(at -19.05 12.7)
+		(at -31.75 8.89)
 		(size 1.6 1.6)
 		(drill 1)
 		(layers "*.Cu" "*.Mask")

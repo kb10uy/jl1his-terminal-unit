@@ -354,7 +354,10 @@ join only inside the Pico 2.
   in the case with leads, which reach any hole of a universal board. The
   catalogue gives the frequency response as a graph from 0.2 kHz to 10 kHz
   (Hashimoto Denki, "トランジスタ用小型トランス" ST series catalogue,
-  `akizukidenshi.com/goodsaffix/st.pdf`).
+  `akizukidenshi.com/goodsaffix/st.pdf`). Its lead identification diagram C
+  gives the colours of the leads: red and green for the primary, and white,
+  black (the centre tap) and green for the secondary.
+- On the prototype the stage works (reported by the user on 2026-11-14).
 
 ### Rig-Side Specifications and Assumptions
 
@@ -469,40 +472,45 @@ join only inside the Pico 2.
 
 ### Perfboard Layout
 
-`hardware/terminal-unit.kicad_pcb` is not a board to be fabricated. It places
-the parts on a universal board with a 2.54 mm grid, 37 by 28 holes, about
-98 mm by 76 mm, with the Pico 2 in sockets on the same board. It is a draft,
-and the board to build on has not been chosen. The file holds the placement;
-only its conventions are listed here.
+`hardware/terminal-unit.kicad_pcb` is not a board to be fabricated. It
+records the prototype as it is built on a universal board, with the Pico 2
+in sockets on the same board. The file holds the placement; only its
+conventions are listed here.
 
-- Hole (1, 1) is at (50.8 mm, 50.8 mm), so a 2.54 mm grid in the PCB editor
-  falls on the holes. The `Dwgs.User` layer shows the holes and numbers
-  their columns and rows.
-- Tracks on `B.Cu` are bare links on the solder side and run from hole to
-  adjacent hole. Tracks on `F.Cu` stand for insulated wires on the solder
-  side; only their ends matter, not the path drawn.
-- Columns 27 and 28 stay empty as the isolation gap, and a rule area keeps
-  tracks and pads out of them. The USB side is columns 1 to 26 and the rig
-  side columns 29 to 37. Only T1, U2 and U3 straddle the gap.
+- The board is the AE-B2_TH, 95 mm by 72 mm, with 960 plated holes of
+  1.0 mm on a 2.54 mm grid and four mounting holes of 3.2 mm, 3.0 mm in
+  from the edges (dimension drawing "AE-B2_TH (H21.09.07)", supplied by the
+  user). The grid has 36 columns and 27 rows. The mounting holes take the
+  four corner positions, and the two positions beside each corner have no
+  hole.
+- The file was drawn from photographs of both sides of the prototype, taken
+  on 2026-11-14. Three links were added to the board after them, two for
+  +3V3 and one for GNDA at U1. The file draws them as the first draft of
+  the layout did, and their route on the board has not been checked.
+- Position (1, 1) is at (50.8 mm, 50.8 mm), so a 2.54 mm grid in the PCB
+  editor falls on the holes. The `Dwgs.User` layer shows the holes and
+  numbers their columns and rows.
+- Tracks on `B.Cu` are bare links and bare wires on the solder side. Tracks
+  on `F.Cu` stand for insulated wires on the component side; only their
+  ends matter, not the path drawn. A via marks a hole in which such a wire
+  ends without a component lead.
+- Column 27 stays empty as the isolation gap, and a rule area keeps tracks
+  and pads out of it.
 - GNDA returns to AGND on pin 33 and the GND of the drivers to pin 18,
   because the footprint shared by the Pico boards keeps copper out of the
   area under the antenna of the W variants. The footprint of the Pico 2 on
   the board lists its seven GND pads as a jumper pad group, which the
   library footprint does not, so that DRC treats them as joined inside the
   module.
-- Where pads sit in adjacent holes DRC reports overlapping courtyards.
-- The status LEDs stand in column 26 at the edge of the gap, at the end of
-  the Pico away from the USB connector. Their cathodes join the GND of the
-  drivers in column 23. Column 21 has no pads in rows 23 and 24, where the
-  antenna keepout of the Pico footprint reaches beyond the module.
+- Where pads sit in adjacent holes DRC reports overlapping courtyards. It
+  also reports one via inside the antenna keepout of the Pico footprint,
+  which reaches beyond the module. The Pico 2 has no antenna.
 - Two footprints rest on assumptions. `ST-78_Leads_Perfboard` takes the body
-  of T1 as 16.5 mm by 20 mm, read from the dimension table of the ST
-  catalogue without its drawing, and puts the lead holes where the layout
-  wants them; the leads have to reach up to 16 mm from the body, and their
-  length has not been checked. `MiniDIN6_Breakout_SIP8` assumes that the
-  breakout board extends equally beyond both end pins and that the jack
-  faces away from the pin row (unverified). Its two G pads carry pad number
-  2, so that they take the net of the jack's ground pin.
+  of T1 as 20 mm by 16.5 mm, read from the dimension table of the ST
+  catalogue without its drawing, and has the lead holes where the prototype
+  has them. `MiniDIN6_Breakout_SIP8` assumes that the breakout board
+  extends equally beyond both end pins (unverified). Its two G pads carry
+  pad number 2, so that they take the net of the jack's ground pin.
 
 ## 5. Working Around RP2350-E9 (Stepping A2)
 
