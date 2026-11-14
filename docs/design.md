@@ -90,10 +90,17 @@ USB device with:
   transmit through an `.fsk` add-on on the PC that translates to the command
   protocol, as JA7UDE's `tinyfsk.fsk` does for TinyFSK
   (https://www.qsl.net/ja7ude/tinyfsk/index.html). None is planned yet.
-- The firmware does nothing when DTR changes (`control-port.md`, "Opening
-  and Closing the Port"). Discarding the half-typed line when DTR rises,
-  discarding output while it is low and aborting when it falls were
-  considered and set aside for now.
+- The firmware aborts when DTR falls (`control-port.md`, "Opening and
+  Closing the Port"). The control task waits on the `ControlChanged` of
+  `CdcAcmClass::split_with_control` and compares DTR with its previous
+  state, since a change of the line coding wakes it as well (check 5). It
+  starts from DTR off, so the DTR off that the host sends when the device is
+  configured is not taken for a fall. `embassy-usb` 0.6.0 clears DTR on a
+  bus reset and wakes the same future (`src/class/cdc_acm.rs`, `reset`), so
+  a reset while DTR is raised aborts as well. The task processes each
+  packet without yielding, so an abort falls between packets, never inside
+  a command. Discarding the half-typed line when DTR rises and discarding
+  output while it is low were considered and set aside.
 
 ### License
 
@@ -668,6 +675,23 @@ its conventions are listed here.
   closing it: Windows `usbser.sys`, Linux `cdc_acm`, Tera Term and pyserial.
   Whether ModemManager probes the port, whose interface protocol is 0x00
   (`cdc_acm.rs`, `CDC_PROTOCOL_NONE`).
+  - Partially checked on Windows 11 Pro build 26300 with `usbser.sys`
+    10.0.26100.9974, read from the defmt log of the firmware, in which
+    `embassy-usb` 0.6.0 logs every SET_CONTROL_LINE_STATE and
+    SET_LINE_CODING (`src/class/cdc_acm.rs`). Reported by the user on
+    2026-11-14.
+  - When the device is configured, `usbser.sys` reads the line coding,
+    sends DTR and RTS off and writes the line coding back. DTR stays off
+    until a program opens the port, so this is not a falling edge.
+  - Opening the port sets the line coding of the program, 9600 baud, and
+    then DTR on. RTS stayed off with the program used.
+  - Closing the port, and killing the program that holds it with
+    `taskkill /F`, both send DTR and RTS off.
+  - Still to check: Linux `cdc_acm`, Tera Term and pyserial each, and
+    ModemManager.
+  - The firmware aborts when DTR falls on the assumption that the other
+    hosts drop DTR on close as Windows does (decided by the user on
+    2026-11-14).
 - [ ] 12. The ITA2 and US figures tables in `terminal_unit_core::baudot` and
   in "Baudot Conversion" of `control-port.md`, against ITU-T
   Recommendation S.1 and a source for the US teleprinter code.

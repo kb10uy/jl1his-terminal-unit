@@ -205,7 +205,16 @@ FIGS where the shift changes. Both figures tables share `-` `?` `:` `(` `)`
   not fit are dropped. Writing to the endpoint waits until the host has
   taken the previous packet, and a host that is not reading must not stop
   command handling or transmission.
-- The firmware does nothing on DTR changes for now. Closing the port
-  neither discards the line being assembled nor aborts the transmission, so
-  a program sends Ctrl-C or `PTT OFF` before it closes the port. `TOT`
-  releases PTT left keyed by a program that dies.
+- When DTR falls, the firmware aborts as Ctrl-C does, without a reply: it
+  discards the queue and the line being assembled, releases PTT and leaves
+  keyboard mode. The host drops DTR when the port is closed, also when the
+  program holding it is killed (check 11 in `design.md`), so a program that
+  goes away does not leave the unit keyed. A bus reset clears DTR as well
+  and so aborts too.
+- A program therefore keeps the port open until its transmission has been
+  sent. Writing commands to the port and closing it at once, as
+  `echo PTT ON > COM8` does, is not supported: the transmission is aborted
+  when the port closes.
+- Raising DTR does nothing, and the output toward the PC is kept while DTR
+  is low. A program that hangs with the port open keeps DTR raised, and
+  `TOT` releases PTT that it left keyed.

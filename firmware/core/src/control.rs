@@ -95,6 +95,12 @@ impl<const LINE: usize, const WORDS: usize> Controller<LINE, WORDS> {
         self.executor.mode
     }
 
+    pub fn abort(&mut self, keyer: &mut impl Keyer) {
+        self.line.clear();
+        self.after_cr = false;
+        self.executor.abort(keyer);
+    }
+
     pub fn feed(
         &mut self,
         byte: u8,
@@ -105,8 +111,7 @@ impl<const LINE: usize, const WORDS: usize> Controller<LINE, WORDS> {
         let after_cr = core::mem::replace(&mut self.after_cr, byte == b'\r');
         let result = match (byte, self.executor.mode) {
             (ETX, _) => {
-                self.line.clear();
-                self.executor.abort(keyer);
+                self.abort(keyer);
                 Ok(Some(Reply::Ok))
             }
             (b'\n', _) if after_cr => Ok(None),
