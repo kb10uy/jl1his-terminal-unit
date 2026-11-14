@@ -60,6 +60,7 @@ not empty.
 |---|---|
 | `TX <text>` | Queue text, converted as described in "Transmit Text" |
 | `SEND <hex>` | Queue code words without conversion, two hexadecimal digits per word |
+| `SENDM <hex>` | As `SEND`, with the uppermost of the `BITS` bits of each word sent first |
 | `PTT ON` | Key PTT. Text queued while PTT is released waits for it and for `TXDELAY` |
 | `PTT OFF` | Release PTT once the queue has been sent in full |
 | `KEY` | Key PTT and enter keyboard mode |
@@ -67,7 +68,7 @@ not empty.
 | `SET <name> <value>` | Change a setting at once. It is not stored until `SAVE` |
 | `GET <name>` | Reply `OK <value>` |
 | `GET` | Reply every setting on one line, `OK NAME=value ...` |
-| `STATUS` | Reply on one line, such as `OK PTT=ON MODE=KEYBOARD QUEUED=12 FREE=8180`. `MODE` is `COMMAND` or `KEYBOARD`; `QUEUED` and `FREE` count code words |
+| `STATUS` | Reply on one line, such as `OK PTT=ON MODE=KEYBOARD QUEUED=12 FREE=8180 SENT=3 LAST_TX=NONE`, described under "Status" |
 | `SAVE` | Store the settings in flash. Refused with `ERR` while transmitting |
 | `DEFAULTS` | Set every setting to its default. It is not stored until `SAVE` |
 | `VER` | Reply the firmware version |
@@ -81,6 +82,36 @@ not empty.
   digits, or a word that does not fit in `BITS`, is answered with `ERR`.
   With `BITS 5` it sends raw Baudot codes, leaving the shifts to the PC,
   which suits an `.fsk` add-on; with `BITS 8` it sends 8-bit data.
+- `SEND` sends bit 0 of a word first, the usual numbering of ITA2, in which
+  E is `01`. `SENDM` is for a program that holds a word with the first bit
+  on the line uppermost: it reverses the lowest `BITS` bits of each word, so
+  with `BITS 5` E is `10`. A word has to fit in `BITS` for both.
+
+## Status
+
+`STATUS` replies with these fields, in this order. A program reads them by
+name, since more may follow.
+
+| Field | Values | Meaning |
+|---|---|---|
+| `PTT` | `ON`, `OFF` | Whether PTT is keyed, from `PTT ON` or `KEY` taking effect until the end of `TXTAIL`, an abort or `TOT` |
+| `MODE` | `COMMAND`, `KEYBOARD` | Whether keyboard mode is on |
+| `QUEUED` | code words | Words waiting in the transmit queue |
+| `FREE` | code words | Room left in the transmit queue |
+| `SENT` | code words | Queued words whose start bit has begun in this transmission |
+| `LAST_TX` | `NONE`, `DONE`, `ABORT`, `TOT` | How the latest transmission ended |
+
+- `SENT` counts a word when its start bit begins on the FSK output, not when
+  it leaves the queue. It counts every word that came through the queue,
+  the shifts that `TX` inserts included, and not the LTRS of `DIDDLE`. A
+  word cut off by an abort after its start bit is counted.
+- `PTT ON` and `KEY` set `SENT` to 0 and `LAST_TX` to `NONE` when they
+  arrive while PTT is released. Both then stay until the next such command,
+  so they can be read after the transmission has ended.
+- `LAST_TX` is `NONE` while PTT is keyed. It becomes `DONE` when PTT is
+  released after the queue and `TXTAIL`, `ABORT` when Ctrl-C, `ABORT` or
+  `BOOTSEL` releases it, and `TOT` when `TOT` does. An abort while PTT is
+  released leaves it as it is.
 
 ## Settings
 
@@ -126,8 +157,8 @@ FIGS where the shift changes. Both figures tables share `-` `?` `:` `(` `)`
 | V | `=` | `;` |
 | Z | `+` | `"` |
 
-- The first character after power-up, `SEND`, `SET BITS` or `DEFAULTS` is
-  preceded by its shift.
+- The first character after power-up, `SEND`, `SENDM`, `SET BITS` or
+  `DEFAULTS` is preceded by its shift.
 - When the receiver may have lost the shift since the last code word was
   queued, because the transmitter sent a diddle LTRS, released PTT or
   aborted, the shift is sent again before the next character that needs it.
@@ -148,8 +179,8 @@ FIGS where the shift changes. Both figures tables share `-` `?` `:` `(` `)`
   line is not run: the rest of it up to its end is discarded and it is
   answered with one `ERR`. Running a truncated line could pass a different
   value, such as `SET BAUD 45.4`.
-- The transmit queue holds 8192 code words. A `TX` or `SEND` that does not
-  fit is answered with `ERR` and nothing of it is queued. `TX` can need up
+- The transmit queue holds 8192 code words. A `TX`, `SEND` or `SENDM` that
+  does not fit is answered with `ERR` and nothing of it is queued. `TX` can need up
   to twice as many codes as characters because of the inserted shifts. At
   45.45 baud, 8192 characters take about 22 minutes.
 - In keyboard mode a character that does not fit is dropped and answered

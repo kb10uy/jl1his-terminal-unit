@@ -1,6 +1,6 @@
 use super::{
     BEL, BS, DEL, Keyer, Mode, SUB, Storage,
-    command::{self, Command},
+    command::{self, BitOrder, Command},
     error::Error,
     reply::Reply,
 };
@@ -79,7 +79,7 @@ impl<const WORDS: usize> Executor<WORDS> {
     ) -> Result<Reply<'_>, Error> {
         match command::parse(line)? {
             Command::Tx(text) => self.queue_text(keyer, Unescape(text.iter()))?,
-            Command::Send(hex) => self.send(hex, keyer)?,
+            Command::Send(hex, order) => self.send(hex, order, keyer)?,
             Command::Ptt(true) => keyer.ptt_on(),
             Command::Ptt(false) => keyer.ptt_off(),
             Command::Key => {
@@ -145,18 +145,22 @@ impl<const WORDS: usize> Executor<WORDS> {
         Ok(())
     }
 
-    fn send(&mut self, hex: &[u8], keyer: &mut impl Keyer) -> Result<(), Error> {
+    fn send(&mut self, hex: &[u8], order: BitOrder, keyer: &mut impl Keyer) -> Result<(), Error> {
         if !hex.len().is_multiple_of(2) {
             return Err(Error::OddDigits);
         }
+        let bits = self.settings.bits;
         let words = self
             .words
             .get_mut(..hex.len() / 2)
             .ok_or(Error::QueueFull)?;
         for (word, &[high, low]) in words.iter_mut().zip(hex.as_chunks::<2>().0) {
             *word = (hex_digit(high)? << 4) | hex_digit(low)?;
-            if !self.settings.bits.fits(*word) {
+            if !bits.fits(*word) {
                 return Err(Error::WordTooWide);
+            }
+            if order == BitOrder::MsbFirst {
+                *word = word.reverse_bits() >> (u8::BITS - u32::from(bits.get()));
             }
         }
         if !words.is_empty() {

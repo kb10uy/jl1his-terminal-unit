@@ -58,7 +58,9 @@ impl FskKeyer {
                 }
                 Step::Send(settings, word) => {
                     debug!("keyer: FSK {=u8:#x}", word);
-                    self.unless_aborted(output.send(&settings, word)).await
+                    let started = || self.with(|sequencer| sequencer.started());
+                    self.unless_aborted(output.send(&settings, word, started))
+                        .await
                 }
                 Step::Hold(drive, wait) => {
                     let hold = async {

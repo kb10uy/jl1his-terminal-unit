@@ -37,10 +37,20 @@ pub struct QueueFull;
 pub struct SaveError(pub &'static str);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LastTx {
+    None,
+    Done,
+    Abort,
+    Tot,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxStatus {
     pub ptt: bool,
     pub queued: usize,
     pub free: usize,
+    pub sent: u32,
+    pub last_tx: LastTx,
 }
 
 impl TxStatus {

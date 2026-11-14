@@ -1,4 +1,4 @@
-use super::{Mode, TxStatus, command};
+use super::{LastTx, Mode, TxStatus, command};
 use crate::{
     keyword::{SWITCH, keyword},
     settings::{Setting, Settings, Value},
@@ -30,10 +30,16 @@ impl fmt::Display for Reply<'_> {
                     Mode::Command => "COMMAND",
                     Mode::Keyboard => "KEYBOARD",
                 };
+                let last_tx = match status.last_tx {
+                    LastTx::None => "NONE",
+                    LastTx::Done => "DONE",
+                    LastTx::Abort => "ABORT",
+                    LastTx::Tot => "TOT",
+                };
                 write!(
                     f,
-                    " PTT={ptt} MODE={mode} QUEUED={} FREE={}",
-                    status.queued, status.free
+                    " PTT={ptt} MODE={mode} QUEUED={} FREE={} SENT={} LAST_TX={last_tx}",
+                    status.queued, status.free, status.sent
                 )
             }
             Reply::Version(version) => write!(f, " {version}"),

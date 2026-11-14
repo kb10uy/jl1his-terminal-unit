@@ -7,6 +7,7 @@ use crate::{
 pub(super) enum Name {
     Tx,
     Send,
+    Sendm,
     Ptt,
     Key,
     Abort,
@@ -20,9 +21,10 @@ pub(super) enum Name {
     Help,
 }
 
-pub(super) const NAMES: [(&str, Name); 13] = [
+pub(super) const NAMES: [(&str, Name); 14] = [
     ("TX", Name::Tx),
     ("SEND", Name::Send),
+    ("SENDM", Name::Sendm),
     ("PTT", Name::Ptt),
     ("KEY", Name::Key),
     ("ABORT", Name::Abort),
@@ -37,9 +39,15 @@ pub(super) const NAMES: [(&str, Name); 13] = [
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BitOrder {
+    LsbFirst,
+    MsbFirst,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command<'a> {
     Tx(&'a [u8]),
-    Send(&'a [u8]),
+    Send(&'a [u8], BitOrder),
     Ptt(bool),
     Key,
     Abort,
@@ -69,7 +77,8 @@ pub fn parse(line: &[u8]) -> Result<Command<'_>, ParseError> {
     let mut args = rest.split(|&b| b == b' ').filter(|arg| !arg.is_empty());
     let command = match name {
         Name::Tx => return Ok(Command::Tx(rest)),
-        Name::Send => Command::Send(args.next().unwrap_or_default()),
+        Name::Send => Command::Send(args.next().unwrap_or_default(), BitOrder::LsbFirst),
+        Name::Sendm => Command::Send(args.next().unwrap_or_default(), BitOrder::MsbFirst),
         Name::Ptt => {
             let state = args.next().ok_or(ParseError::BadArgument)?;
             Command::Ptt(parse_keyword(state, &SWITCH).ok_or(ParseError::BadArgument)?)
@@ -100,7 +109,7 @@ fn setting(name: &[u8]) -> Result<Setting, ParseError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Command, ParseError, parse};
+    use super::{BitOrder, Command, ParseError, parse};
     use crate::settings::Setting;
     use rstest::rstest;
 
@@ -109,8 +118,9 @@ mod tests {
     #[case("tx  de", Command::Tx(b" de"))]
     #[case("TX", Command::Tx(b""))]
     #[case("TX ", Command::Tx(b""))]
-    #[case("SEND 1f04", Command::Send(b"1f04"))]
-    #[case("SEND", Command::Send(b""))]
+    #[case("SEND 1f04", Command::Send(b"1f04", BitOrder::LsbFirst))]
+    #[case("SEND", Command::Send(b"", BitOrder::LsbFirst))]
+    #[case("sendm 1f04", Command::Send(b"1f04", BitOrder::MsbFirst))]
     #[case("ptt on", Command::Ptt(true))]
     #[case("PTT Off", Command::Ptt(false))]
     #[case("KEY", Command::Key)]
@@ -137,6 +147,7 @@ mod tests {
     #[case("PTT 1", ParseError::BadArgument)]
     #[case("PTT ON NOW", ParseError::BadArgument)]
     #[case("SEND 1f 04", ParseError::BadArgument)]
+    #[case("SENDMSB 1f", ParseError::UnknownCommand)]
     #[case("SET BAUD", ParseError::BadArgument)]
     #[case("SET", ParseError::BadArgument)]
     #[case("SET BAUD 45 45", ParseError::BadArgument)]
