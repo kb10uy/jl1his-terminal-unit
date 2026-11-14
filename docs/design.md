@@ -137,6 +137,11 @@ the Baudot conversion live in `core` behind it and are tested on the host.
 - `ptt_on` keys PTT. Words queued while PTT is released wait for it and for
   `TXDELAY`. `ptt_off` releases PTT once the queue has been sent in full and
   `TXTAIL` has passed. `abort` discards the queue and releases PTT at once.
+  The control task can run several commands before the transmit task takes
+  its next step, so `ptt_on` is a request that stays until that step keys
+  PTT: a `ptt_off` that follows at once ends the transmission after the
+  queue and does not take the request back. The `Sequencer` holds this as
+  one of three states, released, requested and keyed.
 - `status` reports whether PTT is keyed, how many words are queued and
   free, how many queued words have started in this transmission and how the
   latest transmission ended (`SENT` and `LAST_TX` in `control-port.md`).
