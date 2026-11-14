@@ -39,12 +39,13 @@ pub async fn run<'d, D: Driver<'d>>(
 
     let commands = async {
         let mut packet = [0; MAX_PACKET_SIZE as usize];
+        let mut reply = Reply::new();
         loop {
             receiver.wait_connection().await;
             info!("control port connected");
             while let Ok(len) = receiver.read_packet(&mut packet).await {
                 for &byte in &packet[..len] {
-                    let mut reply = Reply::new();
+                    reply.clear();
                     let action = controller.feed(byte, &mut keyer, &mut NoStorage, &mut reply);
                     if let Some(line) = reply.line()
                         && line.len() <= output.free_capacity()
@@ -100,6 +101,11 @@ impl Reply {
             len: 0,
             overflowed: false,
         }
+    }
+
+    fn clear(&mut self) {
+        self.len = 0;
+        self.overflowed = false;
     }
 
     fn line(&self) -> Option<&[u8]> {

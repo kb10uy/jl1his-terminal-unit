@@ -31,6 +31,18 @@ const PCM: u16 = 0x0001;
 
 const INPUT_TERMINAL_ID: u8 = 1;
 const OUTPUT_TERMINAL_ID: u8 = 2;
+const NO_TERMINAL: u8 = 0;
+const NO_STRING: u8 = 0;
+const STREAMING_INTERFACES: u8 = 1;
+const CHANNELS: u8 = 1;
+const CHANNEL_CONFIG: u16 = 0x0000;
+const DELAY_FRAMES: u8 = 1;
+const SAMPLE_RATES: u8 = 1;
+const REFRESH: u8 = 0;
+const SYNCH_ADDRESS: u8 = 0;
+const NO_CONTROLS: u8 = 0;
+const LOCK_DELAY_UNITS: u8 = 0;
+const LOCK_DELAY: u16 = 0;
 
 pub struct Microphone<'d, D: Driver<'d>> {
     endpoint: D::EndpointIn,
@@ -50,21 +62,21 @@ impl<'d, D: Driver<'d>> Microphone<'d, D> {
                 INPUT_TERMINAL_ID,
                 MICROPHONE as u8,
                 (MICROPHONE >> 8) as u8,
-                0x00,
-                0x01,
-                0x00,
-                0x00,
-                0x00,
-                0x00,
+                NO_TERMINAL,
+                CHANNELS,
+                CHANNEL_CONFIG as u8,
+                (CHANNEL_CONFIG >> 8) as u8,
+                NO_STRING,
+                NO_STRING,
             ];
             let output_terminal = [
                 OUTPUT_TERMINAL,
                 OUTPUT_TERMINAL_ID,
                 USB_STREAMING as u8,
                 (USB_STREAMING >> 8) as u8,
-                0x00,
+                NO_TERMINAL,
                 INPUT_TERMINAL_ID,
-                0x00,
+                NO_STRING,
             ];
             const HEADER_LENGTH: usize = 9;
             let total_length = HEADER_LENGTH + input_terminal.len() + 2 + output_terminal.len() + 2;
@@ -77,7 +89,7 @@ impl<'d, D: Driver<'d>> Microphone<'d, D> {
                     (BCD_ADC >> 8) as u8,
                     total_length as u8,
                     (total_length >> 8) as u8,
-                    0x01,
+                    STREAMING_INTERFACES,
                     streaming_interface,
                 ],
             );
@@ -94,24 +106,23 @@ impl<'d, D: Driver<'d>> Microphone<'d, D> {
             &[
                 AS_GENERAL,
                 OUTPUT_TERMINAL_ID,
-                0x01,
+                DELAY_FRAMES,
                 PCM as u8,
                 (PCM >> 8) as u8,
             ],
         );
-        let rate = SAMPLE_RATE_HZ.to_le_bytes();
         alt.descriptor(
             CS_INTERFACE,
             &[
                 FORMAT_TYPE,
                 FORMAT_TYPE_I,
-                0x01,
+                CHANNELS,
                 BYTES_PER_SAMPLE as u8,
                 (BYTES_PER_SAMPLE * 8) as u8,
-                0x01,
-                rate[0],
-                rate[1],
-                rate[2],
+                SAMPLE_RATES,
+                SAMPLE_RATE_HZ as u8,
+                (SAMPLE_RATE_HZ >> 8) as u8,
+                (SAMPLE_RATE_HZ >> 16) as u8,
             ],
         );
         let endpoint = alt.endpoint_isochronous_in(
@@ -120,9 +131,18 @@ impl<'d, D: Driver<'d>> Microphone<'d, D> {
             1,
             SynchronizationType::Asynchronous,
             UsageType::DataEndpoint,
-            &[0x00, 0x00],
+            &[REFRESH, SYNCH_ADDRESS],
         );
-        alt.descriptor(CS_ENDPOINT, &[EP_GENERAL, 0x00, 0x00, 0x00, 0x00]);
+        alt.descriptor(
+            CS_ENDPOINT,
+            &[
+                EP_GENERAL,
+                NO_CONTROLS,
+                LOCK_DELAY_UNITS,
+                LOCK_DELAY as u8,
+                (LOCK_DELAY >> 8) as u8,
+            ],
+        );
 
         Self { endpoint }
     }

@@ -1,5 +1,5 @@
-use super::{QueueFull, command::ParseError};
-use crate::baudot::EncodeError;
+use super::{QueueFull, SaveError, command::ParseError};
+use crate::{baudot::EncodeError, settings::InvalidValue};
 use core::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +41,18 @@ impl From<EncodeError> for Error {
 impl From<QueueFull> for Error {
     fn from(_: QueueFull) -> Self {
         Error::QueueFull
+    }
+}
+
+impl From<InvalidValue> for Error {
+    fn from(_: InvalidValue) -> Self {
+        Error::BadValue
+    }
+}
+
+impl From<SaveError> for Error {
+    fn from(SaveError(reason): SaveError) -> Self {
+        Error::Save(reason)
     }
 }
 

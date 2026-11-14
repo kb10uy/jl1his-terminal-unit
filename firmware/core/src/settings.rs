@@ -1,4 +1,7 @@
-use crate::baudot::Code;
+use crate::{
+    baudot::Code,
+    keyword::{SWITCH, keyword, parse_keyword},
+};
 use core::{fmt, num::NonZeroU16};
 
 const STOP_BITS: [(&str, StopBits); 3] = [
@@ -190,16 +193,6 @@ fn parse_u16(text: &[u8]) -> Option<u16> {
     core::str::from_utf8(text).ok()?.parse().ok()
 }
 
-fn parse_switch(text: &[u8]) -> Option<bool> {
-    if text.eq_ignore_ascii_case(b"ON") {
-        Some(true)
-    } else if text.eq_ignore_ascii_case(b"OFF") {
-        Some(false)
-    } else {
-        None
-    }
-}
-
 fn parse_tot(text: &[u8]) -> Option<Option<NonZeroU16>> {
     if text.eq_ignore_ascii_case(b"OFF") {
         Some(None)
@@ -208,35 +201,17 @@ fn parse_tot(text: &[u8]) -> Option<Option<NonZeroU16>> {
     }
 }
 
-pub(crate) fn parse_keyword<T: Copy>(text: &[u8], keywords: &[(&str, T)]) -> Option<T> {
-    keywords
-        .iter()
-        .find(|(keyword, _)| text.eq_ignore_ascii_case(keyword.as_bytes()))
-        .map(|&(_, value)| value)
-}
-
-fn keyword<T: PartialEq>(value: T, keywords: &[(&'static str, T)]) -> &'static str {
-    keywords
-        .iter()
-        .find(|(_, candidate)| *candidate == value)
-        .map_or("", |&(keyword, _)| keyword)
-}
-
-fn switch(value: bool) -> &'static str {
-    if value { "ON" } else { "OFF" }
-}
-
 impl Settings {
     pub fn set(&mut self, setting: Setting, value: &[u8]) -> Result<(), InvalidValue> {
         let applied = match setting {
             Setting::Baud => Baud::parse(value).map(|baud| self.baud = baud),
             Setting::Bits => DataBits::parse(value).map(|bits| self.bits = bits),
             Setting::Stop => parse_keyword(value, &STOP_BITS).map(|stop| self.stop = stop),
-            Setting::Invert => parse_switch(value).map(|invert| self.invert = invert),
+            Setting::Invert => parse_keyword(value, &SWITCH).map(|invert| self.invert = invert),
             Setting::TxDelay => parse_u16(value).map(|ms| self.tx_delay_ms = ms),
             Setting::TxTail => parse_u16(value).map(|ms| self.tx_tail_ms = ms),
             Setting::Diddle => parse_keyword(value, &DIDDLES).map(|diddle| self.diddle = diddle),
-            Setting::Usos => parse_switch(value).map(|usos| self.usos = usos),
+            Setting::Usos => parse_keyword(value, &SWITCH).map(|usos| self.usos = usos),
             Setting::Code => parse_keyword(value, &CODES).map(|code| self.code = code),
             Setting::Tot => parse_tot(value).map(|tot| self.tot_s = tot),
         };
@@ -263,11 +238,11 @@ impl fmt::Display for Value<'_> {
             Setting::Baud => write!(f, "{}", s.baud),
             Setting::Bits => write!(f, "{}", s.bits),
             Setting::Stop => f.write_str(keyword(s.stop, &STOP_BITS)),
-            Setting::Invert => f.write_str(switch(s.invert)),
+            Setting::Invert => f.write_str(keyword(s.invert, &SWITCH)),
             Setting::TxDelay => write!(f, "{}", s.tx_delay_ms),
             Setting::TxTail => write!(f, "{}", s.tx_tail_ms),
             Setting::Diddle => f.write_str(keyword(s.diddle, &DIDDLES)),
-            Setting::Usos => f.write_str(switch(s.usos)),
+            Setting::Usos => f.write_str(keyword(s.usos, &SWITCH)),
             Setting::Code => f.write_str(keyword(s.code, &CODES)),
             Setting::Tot => match s.tot_s {
                 Some(seconds) => write!(f, "{seconds}"),

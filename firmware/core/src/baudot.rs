@@ -39,10 +39,17 @@ impl Shift {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Resync {
+    Undecided,
+    Unneeded,
+    Needed(Shift),
+}
+
 pub struct Words<'a> {
     buf: &'a mut [u8],
     len: usize,
-    resync: Option<Option<Shift>>,
+    resync: Resync,
 }
 
 impl<'a> Words<'a> {
@@ -50,7 +57,7 @@ impl<'a> Words<'a> {
         Self {
             buf,
             len: 0,
-            resync: None,
+            resync: Resync::Undecided,
         }
     }
 
@@ -59,7 +66,10 @@ impl<'a> Words<'a> {
     }
 
     pub fn resync(&self) -> Option<u8> {
-        self.resync.flatten().map(Shift::word)
+        match self.resync {
+            Resync::Needed(shift) => Some(shift.word()),
+            Resync::Undecided | Resync::Unneeded => None,
+        }
     }
 
     fn push(&mut self, word: u8) -> Result<(), EncodeError> {
@@ -98,7 +108,13 @@ impl Encoder {
             if shifting {
                 words.push(needed.word())?;
             }
-            words.resync.get_or_insert((!shifting).then_some(needed));
+            if words.resync == Resync::Undecided {
+                words.resync = if shifting {
+                    Resync::Unneeded
+                } else {
+                    Resync::Needed(needed)
+                };
+            }
             self.shift = Some(needed);
         }
         words.push(word)?;

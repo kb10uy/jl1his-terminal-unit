@@ -1,7 +1,7 @@
 use crate::{
     baudot::LTRS,
     control::{Keyer, QueueFull, TxStatus},
-    fsk::drive,
+    fsk::mark_drive,
     settings::{DataBits, Diddle, Settings},
 };
 use heapless::Deque;
@@ -48,7 +48,7 @@ impl<const N: usize> Sequencer<N> {
     }
 
     pub fn step(&mut self, now_ms: u64) -> (Step, Option<Event>) {
-        let mark = drive(true, self.settings.invert);
+        let mark = mark_drive(self.settings.invert);
         let Some(keyed_at_ms) = self.keyed_at_ms else {
             if !self.ptt_requested {
                 return (Step::Idle, None);

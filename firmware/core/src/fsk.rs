@@ -59,13 +59,13 @@ impl Framing {
     }
 }
 
-pub const fn drive(mark: bool, invert: bool) -> bool {
-    mark == invert
+pub const fn mark_drive(invert: bool) -> bool {
+    invert
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Framing, drive};
+    use super::{Framing, mark_drive};
     use crate::{
         baudot::LTRS,
         settings::{Setting, Settings},
@@ -91,16 +91,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(true, false, false)]
-    #[case(false, false, true)]
-    #[case(true, true, true)]
-    #[case(false, true, false)]
-    fn maps_mark_to_the_released_drive_unless_inverted(
-        #[case] mark: bool,
-        #[case] invert: bool,
-        #[case] expected: bool,
-    ) {
-        assert_eq!(drive(mark, invert), expected);
+    #[case(false, false)]
+    #[case(true, true)]
+    fn releases_the_output_for_mark_unless_inverted(#[case] invert: bool, #[case] drive: bool) {
+        assert_eq!(mark_drive(invert), drive);
     }
 
     #[rstest]

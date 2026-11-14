@@ -1,5 +1,5 @@
 use super::{
-    BEL, BS, DEL, Keyer, Mode, SUB, SaveError, Storage,
+    BEL, BS, DEL, Keyer, Mode, SUB, Storage,
     command::{self, Command},
     error::Error,
     reply::Reply,
@@ -89,9 +89,7 @@ impl<const WORDS: usize> Executor<WORDS> {
             }
             Command::Abort => self.abort(keyer),
             Command::Set(setting, value) => {
-                self.settings
-                    .set(setting, value)
-                    .map_err(|_| Error::BadValue)?;
+                self.settings.set(setting, value)?;
                 if setting == Setting::Bits {
                     self.encoder.reset();
                 }
@@ -104,9 +102,7 @@ impl<const WORDS: usize> Executor<WORDS> {
                 if keyer.status().transmitting() {
                     return Err(Error::Transmitting);
                 }
-                storage
-                    .save(&self.settings)
-                    .map_err(|SaveError(reason)| Error::Save(reason))?;
+                storage.save(&self.settings)?;
             }
             Command::Defaults => {
                 self.settings = Settings::default();

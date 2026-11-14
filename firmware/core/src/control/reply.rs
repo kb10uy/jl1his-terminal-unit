@@ -1,5 +1,8 @@
 use super::{Mode, TxStatus, command};
-use crate::settings::{Setting, Settings, Value};
+use crate::{
+    keyword::{SWITCH, keyword},
+    settings::{Setting, Settings, Value},
+};
 use core::fmt;
 
 pub(super) enum Reply<'a> {
@@ -22,7 +25,7 @@ impl fmt::Display for Reply<'_> {
                 write!(f, " {}={}", setting.name(), settings.value(setting))
             }),
             Reply::Status(status, mode) => {
-                let ptt = if status.ptt { "ON" } else { "OFF" };
+                let ptt = keyword(status.ptt, &SWITCH);
                 let mode = match mode {
                     Mode::Command => "COMMAND",
                     Mode::Keyboard => "KEYBOARD",

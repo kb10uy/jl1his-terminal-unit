@@ -1,4 +1,7 @@
-use crate::settings::{Setting, parse_keyword};
+use crate::{
+    keyword::{SWITCH, parse_keyword},
+    settings::Setting,
+};
 
 #[derive(Clone, Copy)]
 pub(super) enum Name {
@@ -69,13 +72,7 @@ pub fn parse(line: &[u8]) -> Result<Command<'_>, ParseError> {
         Name::Send => Command::Send(args.next().unwrap_or_default()),
         Name::Ptt => {
             let state = args.next().ok_or(ParseError::BadArgument)?;
-            if state.eq_ignore_ascii_case(b"ON") {
-                Command::Ptt(true)
-            } else if state.eq_ignore_ascii_case(b"OFF") {
-                Command::Ptt(false)
-            } else {
-                return Err(ParseError::BadArgument);
-            }
+            Command::Ptt(parse_keyword(state, &SWITCH).ok_or(ParseError::BadArgument)?)
         }
         Name::Key => Command::Key,
         Name::Abort => Command::Abort,

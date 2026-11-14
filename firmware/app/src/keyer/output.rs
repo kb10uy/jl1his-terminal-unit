@@ -156,13 +156,12 @@ impl<'d> FskOutput<'d> {
     }
 
     pub(super) fn release(&mut self) {
-        self.sm.set_enable(false);
-        self.sm.set_pins(Level::Low, &[&self.pin]);
-        self.sm.clear_fifos();
-        self.sm.restart();
-        unsafe { self.sm.exec_jmp(self.origin) };
-        self.irq_flags.clear_all(0b11);
-        self.sm.set_enable(true);
+        self.while_stopped(|output| {
+            output.sm.set_pins(Level::Low, &[&output.pin]);
+            output.sm.clear_fifos();
+            output.sm.restart();
+            output.irq_flags.clear_all(0b11);
+        });
         self.framing = None;
         self.busy = None;
     }
