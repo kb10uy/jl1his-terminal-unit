@@ -2,7 +2,7 @@ use crate::{
     baudot::LTRS,
     control::{Keyer, QueueFull, TxStatus},
     fsk::drive,
-    settings::{Diddle, Settings},
+    settings::{DataBits, Diddle, Settings},
 };
 use heapless::Deque;
 
@@ -75,7 +75,7 @@ impl<const N: usize> Sequencer<N> {
         }
         if self.ptt_requested {
             self.tail = false;
-            if self.settings.diddle == Diddle::Ltrs && self.settings.bits == 5 {
+            if self.settings.diddle == Diddle::Ltrs && self.settings.bits == DataBits::BAUDOT {
                 self.shift_lost = true;
                 return (Step::Send(self.settings, LTRS), None);
             }

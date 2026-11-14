@@ -43,6 +43,33 @@ impl Baud {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DataBits(u8);
+
+impl DataBits {
+    pub const BAUDOT: DataBits = DataBits(5);
+
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+
+    pub const fn fits(self, word: u8) -> bool {
+        word as u32 >> self.0 == 0
+    }
+
+    fn parse(text: &[u8]) -> Option<Self> {
+        parse_u16(text)
+            .filter(|bits| (5..=8).contains(bits))
+            .map(|bits| DataBits(bits as u8))
+    }
+}
+
+impl fmt::Display for DataBits {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl fmt::Display for Baud {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (whole, mut fraction) = (self.0 / 1_000, self.0 % 1_000);
@@ -75,7 +102,7 @@ pub enum Diddle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub baud: Baud,
-    pub bits: u8,
+    pub bits: DataBits,
     pub stop: StopBits,
     pub invert: bool,
     pub tx_delay_ms: u16,
@@ -90,7 +117,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             baud: Baud(45_450),
-            bits: 5,
+            bits: DataBits::BAUDOT,
             stop: StopBits::OneAndHalf,
             invert: false,
             tx_delay_ms: 100,
@@ -203,9 +230,7 @@ impl Settings {
     pub fn set(&mut self, setting: Setting, value: &[u8]) -> Result<(), InvalidValue> {
         let applied = match setting {
             Setting::Baud => Baud::parse(value).map(|baud| self.baud = baud),
-            Setting::Bits => parse_u16(value)
-                .filter(|bits| (5..=8).contains(bits))
-                .map(|bits| self.bits = bits as u8),
+            Setting::Bits => DataBits::parse(value).map(|bits| self.bits = bits),
             Setting::Stop => parse_keyword(value, &STOP_BITS).map(|stop| self.stop = stop),
             Setting::Invert => parse_switch(value).map(|invert| self.invert = invert),
             Setting::TxDelay => parse_u16(value).map(|ms| self.tx_delay_ms = ms),
@@ -254,8 +279,18 @@ impl fmt::Display for Value<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{InvalidValue, Setting, Settings};
+    use super::{DataBits, InvalidValue, Setting, Settings};
     use rstest::rstest;
+
+    #[rstest]
+    #[case("5", 0x1F, true)]
+    #[case("5", 0x20, false)]
+    #[case("7", 0x7F, true)]
+    #[case("7", 0x80, false)]
+    #[case("8", 0xFF, true)]
+    fn checks_that_a_word_fits(#[case] bits: &str, #[case] word: u8, #[case] fits: bool) {
+        assert_eq!(DataBits::parse(bits.as_bytes()).unwrap().fits(word), fits);
+    }
 
     #[rstest]
     #[case(Setting::Baud, "45.45", "45.45")]

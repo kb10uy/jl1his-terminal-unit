@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     baudot::{Encoder, Words},
-    settings::{Setting, Settings},
+    settings::{DataBits, Setting, Settings},
 };
 use core::{iter, slice};
 
@@ -124,7 +124,7 @@ impl<const WORDS: usize> Executor<WORDS> {
     }
 
     fn require_baudot(&self) -> Result<(), Error> {
-        if self.settings.bits == 5 {
+        if self.settings.bits == DataBits::BAUDOT {
             Ok(())
         } else {
             Err(Error::NeedsBaudot)
@@ -159,7 +159,7 @@ impl<const WORDS: usize> Executor<WORDS> {
             .ok_or(Error::QueueFull)?;
         for (word, &[high, low]) in words.iter_mut().zip(hex.as_chunks::<2>().0) {
             *word = (hex_digit(high)? << 4) | hex_digit(low)?;
-            if u32::from(*word) >> self.settings.bits != 0 {
+            if !self.settings.bits.fits(*word) {
                 return Err(Error::WordTooWide);
             }
         }

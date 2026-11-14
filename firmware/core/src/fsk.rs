@@ -14,7 +14,7 @@ impl Framing {
         let half_bit_ticks = (u64::from(clock_hz) * 500 + millibaud / 2) / millibaud;
         Self {
             half_bit_ticks: half_bit_ticks as u32,
-            bits: settings.bits,
+            bits: settings.bits.get(),
             stop_half_bits: match settings.stop {
                 StopBits::One => 2,
                 StopBits::OneAndHalf => 3,
