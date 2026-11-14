@@ -26,11 +26,18 @@ pub enum Event {
     Timeout,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ptt {
+    Released,
+    Requested,
+    Keyed(u64),
+}
+
 pub struct Sequencer<const N: usize> {
     settings: Settings,
     queue: Deque<u8, N>,
-    ptt_requested: bool,
-    keyed_at_ms: Option<u64>,
+    ptt: Ptt,
+    keep_keyed: bool,
     tail: bool,
     shift_lost: bool,
     starting: bool,
@@ -43,8 +50,8 @@ impl<const N: usize> Sequencer<N> {
         Self {
             settings,
             queue: Deque::new(),
-            ptt_requested: false,
-            keyed_at_ms: None,
+            ptt: Ptt::Released,
+            keep_keyed: false,
             tail: false,
             shift_lost: false,
             starting: false,
@@ -55,13 +62,14 @@ impl<const N: usize> Sequencer<N> {
 
     pub fn step(&mut self, now_ms: u64) -> (Step, Option<Event>) {
         let mark = mark_drive(self.settings.invert);
-        let Some(keyed_at_ms) = self.keyed_at_ms else {
-            if !self.ptt_requested {
-                return (Step::Idle, None);
+        let keyed_at_ms = match self.ptt {
+            Ptt::Released => return (Step::Idle, None),
+            Ptt::Requested => {
+                self.ptt = Ptt::Keyed(now_ms);
+                let delay = Wait::Millis(self.settings.tx_delay_ms.into());
+                return (Step::Hold(mark, delay), Some(Event::PttOn));
             }
-            self.keyed_at_ms = Some(now_ms);
-            let delay = Wait::Millis(self.settings.tx_delay_ms.into());
-            return (Step::Hold(mark, delay), Some(Event::PttOn));
+            Ptt::Keyed(at_ms) => at_ms,
         };
         let remaining_ms = match self.settings.tot_s {
             Some(tot) => {
@@ -80,7 +88,7 @@ impl<const N: usize> Sequencer<N> {
             self.starting = true;
             return (Step::Send(self.settings, word), None);
         }
-        if self.ptt_requested {
+        if self.keep_keyed {
             self.tail = false;
             if self.settings.diddle == Diddle::Ltrs && self.settings.bits == DataBits::BAUDOT {
                 self.shift_lost = true;
@@ -94,7 +102,7 @@ impl<const N: usize> Sequencer<N> {
             return (Step::Hold(mark, tail), None);
         }
         self.tail = false;
-        self.keyed_at_ms = None;
+        self.ptt = Ptt::Released;
         self.shift_lost = true;
         self.last_tx = LastTx::Done;
         (Step::Idle, Some(Event::PttOff))
@@ -107,11 +115,11 @@ impl<const N: usize> Sequencer<N> {
     }
 
     fn unkey(&mut self, ended: LastTx) {
-        if self.keyed_at_ms.take().is_some() {
+        if core::mem::replace(&mut self.ptt, Ptt::Released) != Ptt::Released {
             self.last_tx = ended;
         }
         self.queue.clear();
-        self.ptt_requested = false;
+        self.keep_keyed = false;
         self.tail = false;
         self.shift_lost = true;
         self.starting = false;
@@ -137,15 +145,16 @@ impl<const N: usize> Keyer for Sequencer<N> {
     }
 
     fn ptt_on(&mut self) {
-        if self.keyed_at_ms.is_none() {
+        if self.ptt == Ptt::Released {
+            self.ptt = Ptt::Requested;
             self.sent = 0;
             self.last_tx = LastTx::None;
         }
-        self.ptt_requested = true;
+        self.keep_keyed = true;
     }
 
     fn ptt_off(&mut self) {
-        self.ptt_requested = false;
+        self.keep_keyed = false;
     }
 
     fn abort(&mut self) {
@@ -154,7 +163,7 @@ impl<const N: usize> Keyer for Sequencer<N> {
 
     fn status(&self) -> TxStatus {
         TxStatus {
-            ptt: self.keyed_at_ms.is_some(),
+            ptt: self.ptt != Ptt::Released,
             queued: self.queue.len(),
             free: self.queue.capacity() - self.queue.len(),
             sent: self.sent,
@@ -270,6 +279,53 @@ mod tests {
         assert_eq!(sequencer.step(250), (Step::Idle, Some(Event::PttOff)));
         assert!(!sequencer.status().ptt);
         assert_eq!(sequencer.step(300), (Step::Idle, None));
+    }
+
+    #[rstest]
+    #[case(&[])]
+    #[case(&[0x03, 0x19])]
+    fn keys_for_a_request_withdrawn_before_it_took_effect(#[case] words: &[u8]) {
+        let mut sequencer = Sequencer::<QUEUE>::new(Settings::default());
+        sequencer.enqueue(words, None).unwrap();
+        sequencer.ptt_on();
+        sequencer.ptt_off();
+        assert!(sequencer.status().ptt);
+        assert_eq!(
+            sequencer.step(0),
+            (
+                Step::Hold(MARK, Wait::Millis(TXDELAY_MS)),
+                Some(Event::PttOn)
+            )
+        );
+        for &word in words {
+            assert_eq!(sequencer.step(100), send(word));
+        }
+        assert_eq!(
+            sequencer.step(100),
+            (Step::Hold(MARK, Wait::Millis(TXTAIL_MS)), None)
+        );
+        assert_eq!(sequencer.step(150), (Step::Idle, Some(Event::PttOff)));
+        let status = sequencer.status();
+        assert_eq!((status.ptt, status.last_tx), (false, LastTx::Done));
+    }
+
+    #[test]
+    fn abort_withdraws_a_request_that_has_not_taken_effect() {
+        let mut sequencer = Sequencer::<QUEUE>::new(Settings::default());
+        sequencer.enqueue(&[0x03], None).unwrap();
+        sequencer.ptt_on();
+        sequencer.abort();
+        assert_eq!(
+            sequencer.status(),
+            TxStatus {
+                ptt: false,
+                queued: 0,
+                free: QUEUE,
+                sent: 0,
+                last_tx: LastTx::Abort,
+            }
+        );
+        assert_eq!(sequencer.step(0), (Step::Idle, None));
     }
 
     #[test]

@@ -75,6 +75,11 @@ not empty.
 | `BOOTSEL` | Abort, reply `OK` and reboot into BOOTSEL mode for flashing |
 | `HELP` | List the command names on one line |
 
+- `PTT ON` always keys PTT once, however soon `PTT OFF` follows it, also in
+  the same USB packet: PTT is keyed for `TXDELAY`, the queue is sent and PTT
+  is released after `TXTAIL`. With an empty queue that is `TXDELAY` and
+  `TXTAIL` of mark. `KEY` followed at once by Ctrl-Z does the same. Only an
+  abort takes a `PTT ON` back.
 - `SEND` writes data as hexadecimal rather than raw bytes, so it stays a
   line of text: Ctrl-C keeps working, and neither a line end, a tty that is
   not in raw mode nor XON / XOFF flow control can alter the data.
@@ -94,7 +99,7 @@ name, since more may follow.
 
 | Field | Values | Meaning |
 |---|---|---|
-| `PTT` | `ON`, `OFF` | Whether PTT is keyed, from `PTT ON` or `KEY` taking effect until the end of `TXTAIL`, an abort or `TOT` |
+| `PTT` | `ON`, `OFF` | Whether PTT is keyed, from the moment `PTT ON` or `KEY` is accepted until the end of `TXTAIL`, an abort or `TOT` |
 | `MODE` | `COMMAND`, `KEYBOARD` | Whether keyboard mode is on |
 | `QUEUED` | code words | Words waiting in the transmit queue |
 | `FREE` | code words | Room left in the transmit queue |
@@ -112,6 +117,9 @@ name, since more may follow.
   released after the queue and `TXTAIL`, `ABORT` when Ctrl-C, `ABORT` or
   `BOOTSEL` releases it, and `TOT` when `TOT` does. An abort while PTT is
   released leaves it as it is.
+- `PTT` is `ON` as soon as `PTT ON` or `KEY` has been answered, a moment
+  before the transmit task drives the pin. An abort in that moment gives
+  `PTT=OFF` and `LAST_TX=ABORT`, as one after it does.
 
 ## Settings
 
